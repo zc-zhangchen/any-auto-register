@@ -503,11 +503,6 @@ class CFWorkerMailbox(BaseMailbox):
         token = data.get("token", data.get("jwt", ""))
         if not email:
             raise RuntimeError(f"CF Worker 创建邮箱失败: 返回缺少 email/address, body={str(data)[:200]}")
-        data = self._request_json("POST", "/admin/new_address", payload=payload, timeout=15)
-        email = data.get("email", data.get("address", ""))
-        token = data.get("token", data.get("jwt", ""))
-        if not email or not token:
-            raise RuntimeError(f"CFWorker API /admin/new_address 返回缺少 email/jwt: {data}")
         self._token = token
         print(f"[CFWorker] 生成邮箱: {email} token={token[:40] if token else 'NONE'}...")
         return MailboxAccount(email=email, account_id=token)
