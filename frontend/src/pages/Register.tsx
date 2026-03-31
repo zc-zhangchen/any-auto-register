@@ -44,6 +44,8 @@ export default function Register() {
         laoudo_auth: cfg.laoudo_auth || '',
         laoudo_email: cfg.laoudo_email || '',
         laoudo_account_id: cfg.laoudo_account_id || '',
+        facai_api_url: cfg.facai_api_url || '',
+        facai_domain: cfg.facai_domain || '',
         maliapi_base_url: cfg.maliapi_base_url || 'https://maliapi.215.im/v1',
         maliapi_api_key: cfg.maliapi_api_key || '',
         maliapi_domain: cfg.maliapi_domain || '',
@@ -93,6 +95,8 @@ export default function Register() {
           laoudo_auth: values.laoudo_auth,
           laoudo_email: values.laoudo_email,
           laoudo_account_id: values.laoudo_account_id,
+          facai_api_url: values.facai_api_url,
+          facai_domain: values.facai_domain,
           maliapi_base_url: values.maliapi_base_url,
           maliapi_api_key: values.maliapi_api_key,
           maliapi_domain: values.maliapi_domain,
@@ -226,7 +230,8 @@ export default function Register() {
                 { value: 'moemail', label: 'MoeMail (sall.cc)' },
                 { value: 'tempmail_lol', label: 'TempMail.lol' },
                 { value: 'skymail', label: 'SkyMail (CloudMail)' },
-                { value: 'maliapi', label: 'YYDS Mail / MaliAPI' },
+                { value: 'facai', label: '发财邮箱' },
+                { value: 'maliapi', label: 'YYDS' },
                 { value: 'duckmail', label: 'DuckMail' },
                 { value: 'freemail', label: 'Freemail' },
                 { value: 'laoudo', label: 'Laoudo' },
@@ -280,6 +285,24 @@ export default function Register() {
                     { value: 'prefer_public', label: 'prefer_public' },
                   ]}
                 />
+              </Form.Item>
+            </>
+          )}
+          {mailProvider === 'facai' && (
+            <>
+              <Form.Item
+                name="facai_api_url"
+                label="API URL（可选）"
+                extra="留空时自动随机使用内置 3 个发财邮箱后端。"
+              >
+                <Input placeholder="留空则随机使用内置后端" />
+              </Form.Item>
+              <Form.Item
+                name="facai_domain"
+                label="邮箱域名（可选）"
+                extra="留空时随机使用 linshiyouxiang.eu.cc / liuxdotmp.eu.cc / tmpmail.eu.cc。"
+              >
+                <Input placeholder="留空则随机使用内置域名" />
               </Form.Item>
             </>
           )}

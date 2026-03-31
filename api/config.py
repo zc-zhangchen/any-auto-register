@@ -1,8 +1,14 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
+import json
+from pathlib import Path
 from core.config_store import config_store
 
 router = APIRouter(prefix="/config", tags=["config"])
+
+DEFAULT_MALIAPI_BASE_URL = "https://maliapi.215.im/v1"
+DEFAULT_MALIAPI_AUTO_DOMAIN_STRATEGY = "balanced"
+_DEFAULT_YYDS_CONFIG_PATH = Path(__file__).resolve().parents[2] / "codex_yyds_register" / "config.json"
 
 CONFIG_KEYS = [
     "laoudo_auth",
@@ -37,6 +43,8 @@ CONFIG_KEYS = [
     "cfworker_domains",
     "cfworker_enabled_domains",
     "cfworker_fingerprint",
+    "facai_api_url",
+    "facai_domain",
     "smstome_cookie",
     "smstome_country_slugs",
     "smstome_phone_attempts",
@@ -75,9 +83,42 @@ class ConfigUpdate(BaseModel):
     data: dict
 
 
+def _load_codex_yyds_mail_defaults(config_path: Path | None = None) -> dict[str, str]:
+    path = Path(config_path or _DEFAULT_YYDS_CONFIG_PATH)
+    if not path.exists():
+        return {}
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+    if not isinstance(payload, dict):
+        return {}
+
+    return {
+        "maliapi_base_url": str(payload.get("yydsmail_api_base", "") or "").strip(),
+        "maliapi_api_key": str(payload.get("yydsmail_api_key", "") or "").strip(),
+    }
+
+
+def _apply_default_config_values(values: dict, *, yyds_config_path: Path | None = None) -> dict:
+    merged = dict(values or {})
+    yyds_defaults = _load_codex_yyds_mail_defaults(yyds_config_path)
+
+    if not str(merged.get("maliapi_base_url", "") or "").strip():
+        merged["maliapi_base_url"] = yyds_defaults.get("maliapi_base_url") or DEFAULT_MALIAPI_BASE_URL
+    if not str(merged.get("maliapi_api_key", "") or "").strip():
+        merged["maliapi_api_key"] = yyds_defaults.get("maliapi_api_key", "")
+    if not str(merged.get("maliapi_auto_domain_strategy", "") or "").strip():
+        merged["maliapi_auto_domain_strategy"] = DEFAULT_MALIAPI_AUTO_DOMAIN_STRATEGY
+
+    return merged
+
+
 @router.get("")
 def get_config():
-    all_cfg = config_store.get_all()
+    all_cfg = _apply_default_config_values(config_store.get_all())
     # 只返回已知 key，未设置的返回空字符串
     return {k: all_cfg.get(k, "") for k in CONFIG_KEYS}
 

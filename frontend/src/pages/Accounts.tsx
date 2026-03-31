@@ -424,6 +424,8 @@ export default function Accounts() {
             laoudo_auth: cfg.laoudo_auth,
             laoudo_email: cfg.laoudo_email,
             laoudo_account_id: cfg.laoudo_account_id,
+            facai_api_url: cfg.facai_api_url,
+            facai_domain: cfg.facai_domain,
             maliapi_base_url: cfg.maliapi_base_url,
             maliapi_api_key: cfg.maliapi_api_key,
             maliapi_domain: cfg.maliapi_domain,

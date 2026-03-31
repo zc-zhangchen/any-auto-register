@@ -142,6 +142,12 @@ def create_mailbox(provider: str, extra: dict = None, proxy: str = None) -> 'Bas
             custom_auth=extra.get("cfworker_custom_auth", ""),
             proxy=proxy,
         )
+    elif provider == "facai":
+        return FacaiMailbox(
+            api_url=extra.get("facai_api_url", ""),
+            domain=extra.get("facai_domain", ""),
+            proxy=proxy,
+        )
     elif provider == "luckmail":
         return LuckMailMailbox(
             base_url=extra.get("luckmail_base_url") or "https://mails.luckyous.com/",
@@ -1002,6 +1008,216 @@ class CFWorkerMailbox(BaseMailbox):
                 pass
             time.sleep(3)
         raise TimeoutError(f"\u7b49\u5f85\u9a8c\u8bc1\u7801\u8d85\u65f6 ({timeout}s)")
+
+
+class FacaiMailbox(BaseMailbox):
+    """发财邮箱临时邮箱服务"""
+
+    DEFAULT_BACKENDS = [
+        {
+            "domain": "linshiyouxiang.eu.cc",
+            "api_url": "https://admin.linshiyouxiang.eu.cc",
+        },
+        {
+            "domain": "liuxdotmp.eu.cc",
+            "api_url": "https://admin.liuxdotmp.eu.cc",
+        },
+        {
+            "domain": "tmpmail.eu.cc",
+            "api_url": "https://admin.tmpmail.eu.cc",
+        },
+    ]
+
+    def __init__(self, api_url: str, domain: str = "", proxy: str = None):
+        self.api = str(api_url or "").rstrip("/")
+        self.domain = str(domain or "").strip().lower()
+        self.proxy = {"http": proxy, "https": proxy} if proxy else None
+        self._token = None
+        self._active_backend = None
+
+    def _headers(self, bearer: str = "") -> dict[str, str]:
+        headers = {
+            "accept": "application/json, text/plain, */*",
+            "content-type": "application/json",
+        }
+        if bearer:
+            headers["Authorization"] = f"Bearer {bearer}"
+        return headers
+
+    def _request_json(self, method: str, path: str, *, params: dict | None = None,
+                      payload: dict | None = None, bearer: str = "", timeout: int = 15,
+                      api_base: str | None = None):
+        import requests
+
+        response = requests.request(
+            method,
+            f"{str(api_base or self.api).rstrip('/')}{path}",
+            params=params,
+            json=payload,
+            headers=self._headers(bearer),
+            proxies=self.proxy,
+            timeout=timeout,
+        )
+        body = (response.text or "").strip()
+        preview = body[:200] or "<empty>"
+
+        if response.status_code >= 400:
+            raise RuntimeError(
+                f"发财邮箱 API {path} 失败: HTTP {response.status_code} {preview}"
+            )
+
+        try:
+            return response.json()
+        except Exception as exc:
+            raise RuntimeError(
+                f"发财邮箱 API {path} 返回非 JSON: HTTP {response.status_code} {preview}"
+            ) from exc
+
+    def _generate_local_part(self) -> str:
+        import string
+
+        prefix = "".join(random.choices(string.ascii_lowercase, k=6))
+        suffix = "".join(random.choices(string.digits, k=4))
+        return f"{prefix}{suffix}"
+
+    def _resolve_backend(self) -> dict[str, str]:
+        configured_api = str(self.api or "").strip().rstrip("/")
+        configured_domain = str(self.domain or "").strip().lower()
+
+        if configured_api and configured_domain:
+            return {
+                "api_url": configured_api,
+                "domain": configured_domain,
+            }
+
+        for backend in self.DEFAULT_BACKENDS:
+            if configured_domain and backend["domain"] == configured_domain:
+                return backend
+            if configured_api and backend["api_url"] == configured_api:
+                return backend
+
+        if configured_api and not configured_domain:
+            raise RuntimeError("发财邮箱已配置 API URL，但缺少邮箱域名")
+        if configured_domain and not configured_api:
+            raise RuntimeError("发财邮箱已配置邮箱域名，但缺少对应 API URL")
+
+        return random.choice(self.DEFAULT_BACKENDS)
+
+    def _backend_from_account(self, account: MailboxAccount | None) -> dict[str, str] | None:
+        extra = account.extra if account and isinstance(account.extra, dict) else {}
+        api_url = str(extra.get("facai_api_url") or "").strip().rstrip("/")
+        domain = str(extra.get("facai_domain") or "").strip().lower()
+        if api_url and domain:
+            return {
+                "api_url": api_url,
+                "domain": domain,
+            }
+        return None
+
+    def _list_mails(self, token: str, account: MailboxAccount | None = None) -> list[dict]:
+        backend = self._backend_from_account(account) or self._active_backend or self._resolve_backend()
+        data = self._request_json(
+            "GET",
+            "/api/mails",
+            params={"limit": 20, "offset": 0},
+            bearer=token,
+            timeout=10,
+            api_base=backend["api_url"],
+        )
+        if isinstance(data, dict):
+            mails = data.get("results") or data.get("mails") or data.get("messages") or []
+        else:
+            mails = data
+        return [item for item in (mails or []) if isinstance(item, dict)]
+
+    def get_email(self) -> MailboxAccount:
+        backend = self._resolve_backend()
+        self._active_backend = backend
+        payload = {
+            "name": self._generate_local_part(),
+            "domain": backend["domain"],
+        }
+        data = self._request_json(
+            "POST",
+            "/api/new_address",
+            payload=payload,
+            timeout=15,
+            api_base=backend["api_url"],
+        )
+        email = str(data.get("address") or data.get("email") or "").strip()
+        token = str(data.get("jwt") or data.get("token") or "").strip()
+        if not email or not token:
+            raise RuntimeError(f"发财邮箱 /api/new_address 返回缺少 address/jwt: {data}")
+        self._token = token
+        return MailboxAccount(
+            email=email,
+            account_id=token,
+            extra={
+                "facai_domain": backend["domain"],
+                "facai_api_url": backend["api_url"],
+            },
+        )
+
+    def get_current_ids(self, account: MailboxAccount) -> set:
+        token = str(account.account_id or self._token or "").strip()
+        if not token:
+            return set()
+        try:
+            return {
+                str(mail.get("id"))
+                for mail in self._list_mails(token, account)
+                if mail.get("id") is not None
+            }
+        except Exception:
+            return set()
+
+    def wait_for_code(self, account: MailboxAccount, keyword: str = "",
+                      timeout: int = 120, before_ids: set = None,
+                      code_pattern: str = None, **kwargs) -> str:
+        import re
+        import time
+
+        token = str(account.account_id or self._token or "").strip()
+        if not token:
+            raise RuntimeError("发财邮箱缺少登录密钥（jwt）")
+
+        seen = {str(mid) for mid in (before_ids or set())}
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                for mail in self._list_mails(token, account):
+                    mail_id = str(mail.get("id") or "").strip()
+                    if not mail_id or mail_id in seen:
+                        continue
+                    seen.add(mail_id)
+
+                    search_text = " ".join(
+                        [
+                            str(mail.get("subject") or ""),
+                            str(mail.get("raw") or ""),
+                            str(mail.get("text") or ""),
+                            str(mail.get("html") or ""),
+                            str(mail.get("content") or ""),
+                            str(mail.get("snippet") or ""),
+                        ]
+                    ).strip()
+                    search_text = self._decode_raw_content(search_text) or search_text
+                    search_text = re.sub(
+                        r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
+                        "",
+                        search_text,
+                    )
+                    if keyword and keyword.lower() not in search_text.lower():
+                        continue
+
+                    code = self._safe_extract(search_text, code_pattern)
+                    if code:
+                        self._log(f"[Facai] 收到验证码: {code}")
+                        return code
+            except Exception:
+                pass
+            time.sleep(3)
+        raise TimeoutError(f"等待验证码超时 ({timeout}s)")
 
 
 class MoeMailMailbox(BaseMailbox):

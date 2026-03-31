@@ -19,9 +19,10 @@ const SELECT_FIELDS: Record<string, { label: string; value: string }[]> = {
     { label: 'Laoudo（固定邮箱）', value: 'laoudo' },
     { label: 'TempMail.lol（自动生成）', value: 'tempmail_lol' },
     { label: 'SkyMail（CloudMail 接口）', value: 'skymail' },
+    { label: '发财邮箱', value: 'facai' },
     { label: 'DuckMail（自动生成）', value: 'duckmail' },
     { label: 'MoeMail (sall.cc)', value: 'moemail' },
-    { label: 'YYDS Mail / MaliAPI', value: 'maliapi' },
+    { label: 'YYDS', value: 'maliapi' },
     { label: 'Freemail（自建 CF Worker）', value: 'freemail' },
     { label: 'CF Worker（自建域名）', value: 'cfworker' },
     { label: 'LuckMail（订单接码 / 已购邮箱）', value: 'luckmail' },
@@ -108,13 +109,21 @@ const TAB_ITEMS = [
         ],
       },
       {
-        title: 'YYDS Mail / MaliAPI',
+        title: 'YYDS',
         desc: '基于 API Key 创建临时邮箱并轮询收件箱消息',
         fields: [
           { key: 'maliapi_base_url', label: 'API URL', placeholder: 'https://maliapi.215.im/v1' },
           { key: 'maliapi_api_key', label: 'API Key', secret: true },
           { key: 'maliapi_domain', label: '邮箱域名（可选）', placeholder: 'example.com' },
           { key: 'maliapi_auto_domain_strategy', label: '自动域名策略', type: 'select' },
+        ],
+      },
+      {
+        title: '发财邮箱',
+        desc: '留空时自动在内置 3 个域名后端中随机选择；也可手动指定 API URL 与域名固定走某一个',
+        fields: [
+          { key: 'facai_api_url', label: 'API URL（可选）', placeholder: '留空则随机使用内置后端' },
+          { key: 'facai_domain', label: '邮箱域名（可选）', placeholder: '留空则随机使用 linshiyouxiang / liuxdotmp / tmpmail' },
         ],
       },
       {
@@ -778,9 +787,6 @@ export default function Settings() {
 
   useEffect(() => {
     apiFetch('/config').then((data) => {
-      if (!data.maliapi_base_url) {
-        data.maliapi_base_url = 'https://maliapi.215.im/v1'
-      }
       if (!data.luckmail_base_url) {
         data.luckmail_base_url = 'https://mails.luckyous.com/'
       }
