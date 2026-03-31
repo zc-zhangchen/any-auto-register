@@ -40,6 +40,29 @@ const STATUS_COLORS: Record<string, string> = {
   invalid: 'error',
 }
 
+function parseExtraJson(raw: string | undefined) {
+  if (!raw) return {}
+  try {
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function normalizeAccount(account: any) {
+  const extra = parseExtraJson(account.extra_json)
+  const syncStatuses = extra.sync_statuses && typeof extra.sync_statuses === 'object' ? extra.sync_statuses : {}
+  const cpaSync = syncStatuses.cpa && typeof syncStatuses.cpa === 'object' ? syncStatuses.cpa : {}
+  return { ...account, extra, cpaSync }
+}
+
+function formatSyncTime(value?: string) {
+  if (!value) return ''
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
+}
+
 function LogPanel({ taskId, onDone }: { taskId: string; onDone: () => void }) {
   const [lines, setLines] = useState<string[]>([])
   const [done, setDone] = useState(false)
@@ -281,6 +304,7 @@ export default function Accounts() {
   const [importLoading, setImportLoading] = useState(false)
   const [taskId, setTaskId] = useState<string | null>(null)
   const [registerLoading, setRegisterLoading] = useState(false)
+  const [cpaSyncLoading, setCpaSyncLoading] = useState<'pending' | 'selected' | ''>('')
 
   useEffect(() => {
     if (platform) setCurrentPlatform(platform)
@@ -293,7 +317,7 @@ export default function Accounts() {
       if (search) params.set('email', search)
       if (filterStatus) params.set('status', filterStatus)
       const data = await apiFetch(`/accounts?${params}`)
-      setAccounts(data.items)
+      setAccounts((data.items || []).map(normalizeAccount))
       setTotal(data.total)
     } finally {
       setLoading(false)
@@ -307,6 +331,15 @@ export default function Accounts() {
   const copyText = (text: string) => {
     navigator.clipboard.writeText(text)
     message.success('已复制')
+  }
+
+  const getRefreshToken = (record: any): string => {
+    try {
+      const extra = JSON.parse(record.extra_json || '{}')
+      return extra.refresh_token || ''
+    } catch {
+      return ''
+    }
   }
 
   const exportCsv = () => {
@@ -391,8 +424,15 @@ export default function Accounts() {
             laoudo_auth: cfg.laoudo_auth,
             laoudo_email: cfg.laoudo_email,
             laoudo_account_id: cfg.laoudo_account_id,
+            maliapi_base_url: cfg.maliapi_base_url,
+            maliapi_api_key: cfg.maliapi_api_key,
+            maliapi_domain: cfg.maliapi_domain,
+            maliapi_auto_domain_strategy: cfg.maliapi_auto_domain_strategy,
             yescaptcha_key: cfg.yescaptcha_key,
             moemail_api_url: cfg.moemail_api_url,
+            skymail_api_base: cfg.skymail_api_base,
+            skymail_token: cfg.skymail_token,
+            skymail_domain: cfg.skymail_domain,
             duckmail_address: cfg.duckmail_address,
             duckmail_password: cfg.duckmail_password,
             duckmail_api_url: cfg.duckmail_api_url,
@@ -433,6 +473,96 @@ export default function Accounts() {
     load()
   }
 
+  const showCpaSyncResult = (title: string, result: any) => {
+    const lines = (result.items || [])
+      .flatMap((item: any) =>
+        (item.results || []).map((syncResult: any) => ({
+          email: item.email,
+          platform: item.platform,
+          ok: Boolean(syncResult.ok),
+          name: syncResult.name || 'CPA',
+          msg: syncResult.msg || '',
+        })),
+      )
+      .filter((item: any) => !item.ok)
+      .map((item: any) => `[${item.platform}] ${item.email || '-'} / ${item.name}: ${item.msg || '失败'}`)
+
+    if (lines.length === 0) return
+
+    Modal.info({
+      title,
+      width: 760,
+      content: (
+        <pre
+          style={{
+            margin: 0,
+            maxHeight: 360,
+            overflow: 'auto',
+            padding: 12,
+            borderRadius: 8,
+            background: 'rgba(127,127,127,0.08)',
+            fontSize: 12,
+            lineHeight: 1.5,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+          }}
+        >
+          {lines.join('\n')}
+        </pre>
+      ),
+    })
+  }
+
+  const handleCpaBackfill = async (mode: 'pending' | 'selected') => {
+    if (currentPlatform !== 'chatgpt') return
+
+    const body: Record<string, unknown> = {
+      platforms: ['chatgpt'],
+    }
+
+    if (mode === 'selected') {
+      const accountIds = Array.from(selectedRowKeys)
+        .map((value) => Number(value))
+        .filter((value) => Number.isInteger(value) && value > 0)
+
+      if (accountIds.length === 0) {
+        message.warning('请先选择要上传的账号')
+        return
+      }
+      body.account_ids = accountIds
+    } else {
+      body.pending_only = true
+      if (filterStatus) body.status = filterStatus
+      if (search) body.email = search
+    }
+
+    setCpaSyncLoading(mode)
+    try {
+      const result = await apiFetch('/integrations/backfill', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      })
+
+      const actionLabel = mode === 'selected' ? '所选账号 CPA 上传' : '未上传账号 CPA 补传'
+      if (!result.total) {
+        message.info('没有可处理的账号')
+      } else if (!result.failed) {
+        message.success(`${actionLabel}完成：成功 ${result.success} / ${result.total}`)
+      } else if (!result.success) {
+        message.error(`${actionLabel}失败：成功 ${result.success} / ${result.total}`)
+      } else {
+        message.warning(`${actionLabel}部分完成：成功 ${result.success} / ${result.total}`)
+      }
+
+      showCpaSyncResult(`${actionLabel}结果`, result)
+      await load()
+    } catch (e: any) {
+      message.error(`CPA 上传失败: ${e.message}`)
+    } finally {
+      setCpaSyncLoading('')
+    }
+  }
+
   const columns: any[] = [
     {
       title: '邮箱',
@@ -454,6 +584,22 @@ export default function Accounts() {
           <Button type="text" size="small" icon={<CopyOutlined />} onClick={() => copyText(text)} />
         </Space>
       ),
+    },
+    {
+      title: 'RT',
+      key: 'refresh_token',
+      render: (_: any, record: any) => {
+        const rt = getRefreshToken(record)
+        if (!rt) return <span style={{ color: '#ccc' }}>-</span>
+        return (
+          <Space>
+            <Text style={{ fontFamily: 'monospace', fontSize: 11, filter: 'blur(4px)', maxWidth: 80, overflow: 'hidden', display: 'inline-block', verticalAlign: 'middle' }}>
+              {rt.slice(0, 16)}
+            </Text>
+            <Button type="text" size="small" icon={<CopyOutlined />} onClick={() => copyText(rt)} />
+          </Space>
+        )
+      },
     },
     {
       title: '状态',
@@ -506,6 +652,37 @@ export default function Accounts() {
     },
   ]
 
+  if (currentPlatform === 'chatgpt') {
+    columns.splice(4, 0, {
+      title: 'CPA',
+      key: 'cpa_sync',
+      render: (_: any, record: any) => {
+        const sync = record.cpaSync || {}
+        const uploaded = Boolean(sync.uploaded || sync.uploaded_at)
+        const attempted = Boolean(sync.last_attempt_at)
+        const color = uploaded ? 'success' : attempted ? 'error' : 'default'
+        const label = uploaded ? '已上传' : attempted ? '最近失败' : '未上传'
+        const time = uploaded ? sync.uploaded_at : sync.last_attempt_at
+
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 140 }}>
+            <Tag color={color}>{label}</Tag>
+            {time ? (
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {formatSyncTime(time)}
+              </Text>
+            ) : null}
+            {sync.last_message ? (
+              <Text type="secondary" ellipsis={{ tooltip: sync.last_message }} style={{ maxWidth: 220, fontSize: 12 }}>
+                {sync.last_message}
+              </Text>
+            ) : null}
+          </div>
+        )
+      },
+    })
+  }
+
   return (
     <div>
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
@@ -535,6 +712,26 @@ export default function Accounts() {
           )}
         </Space>
         <Space>
+          {currentPlatform === 'chatgpt' && selectedRowKeys.length > 0 && (
+            <Popconfirm
+              title={`确认上传选中的 ${selectedRowKeys.length} 个账号到 CPA？`}
+              onConfirm={() => handleCpaBackfill('selected')}
+            >
+              <Button loading={cpaSyncLoading === 'selected'} icon={<UploadOutlined />}>
+                上传所选 CPA
+              </Button>
+            </Popconfirm>
+          )}
+          {currentPlatform === 'chatgpt' && (
+            <Popconfirm
+              title="确认补传当前筛选范围内尚未成功上传 CPA 的账号？"
+              onConfirm={() => handleCpaBackfill('pending')}
+            >
+              <Button loading={cpaSyncLoading === 'pending'} icon={<UploadOutlined />} disabled={total === 0}>
+                补传未上传 CPA
+              </Button>
+            </Popconfirm>
+          )}
           {selectedRowKeys.length > 0 && (
             <Popconfirm title={`确认删除选中的 ${selectedRowKeys.length} 个账号？`} onConfirm={handleBatchDelete}>
               <Button danger icon={<DeleteOutlined />}>删除 {selectedRowKeys.length} 个</Button>
@@ -655,22 +852,41 @@ export default function Accounts() {
         maskClosable={false}
       >
         {currentAccount && (
-          <Form form={detailForm} layout="vertical" initialValues={currentAccount}>
-            <Form.Item name="status" label="状态">
-              <Select
-                options={[
-                  { value: 'registered', label: '已注册' },
-                  { value: 'trial', label: '试用中' },
-                  { value: 'subscribed', label: '已订阅' },
-                  { value: 'expired', label: '已过期' },
-                  { value: 'invalid', label: '已失效' },
-                ]}
-              />
-            </Form.Item>
-            <Form.Item name="token" label="Token">
-              <Input.TextArea rows={2} style={{ fontFamily: 'monospace' }} />
-            </Form.Item>
-          </Form>
+          <>
+            <Form form={detailForm} layout="vertical" initialValues={currentAccount}>
+              <Form.Item name="status" label="状态">
+                <Select
+                  options={[
+                    { value: 'registered', label: '已注册' },
+                    { value: 'trial', label: '试用中' },
+                    { value: 'subscribed', label: '已订阅' },
+                    { value: 'expired', label: '已过期' },
+                    { value: 'invalid', label: '已失效' },
+                  ]}
+                />
+              </Form.Item>
+              <Form.Item name="token" label="Access Token">
+                <Input.TextArea rows={2} style={{ fontFamily: 'monospace' }} />
+              </Form.Item>
+            </Form>
+            {(() => {
+              const rt = getRefreshToken(currentAccount)
+              if (!rt) return null
+              return (
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ marginBottom: 4, fontWeight: 500, fontSize: 13 }}>Refresh Token</div>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, background: 'rgba(0,0,0,0.03)', border: '1px solid #e5e7eb', borderRadius: 6, padding: '6px 10px' }}>
+                    <Text
+                      style={{ fontFamily: 'monospace', fontSize: 11, wordBreak: 'break-all', flex: 1, userSelect: 'text' }}
+                      copyable={{ text: rt, tooltips: ['复制 RT', '已复制'] }}
+                    >
+                      {rt}
+                    </Text>
+                  </div>
+                </div>
+              )
+            })()}
+          </>
         )}
       </Modal>
     </div>

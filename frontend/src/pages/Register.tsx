@@ -38,9 +38,16 @@ export default function Register() {
         mail_provider: cfg.mail_provider || 'moemail',
         yescaptcha_key: cfg.yescaptcha_key || '',
         moemail_api_url: cfg.moemail_api_url || '',
+        skymail_api_base: cfg.skymail_api_base || 'https://api.skymail.ink',
+        skymail_token: cfg.skymail_token || '',
+        skymail_domain: cfg.skymail_domain || '',
         laoudo_auth: cfg.laoudo_auth || '',
         laoudo_email: cfg.laoudo_email || '',
         laoudo_account_id: cfg.laoudo_account_id || '',
+        maliapi_base_url: cfg.maliapi_base_url || 'https://maliapi.215.im/v1',
+        maliapi_api_key: cfg.maliapi_api_key || '',
+        maliapi_domain: cfg.maliapi_domain || '',
+        maliapi_auto_domain_strategy: cfg.maliapi_auto_domain_strategy || 'balanced',
         duckmail_api_url: cfg.duckmail_api_url || '',
         duckmail_provider_url: cfg.duckmail_provider_url || '',
         duckmail_bearer: cfg.duckmail_bearer || '',
@@ -51,7 +58,7 @@ export default function Register() {
         cfworker_api_url: cfg.cfworker_api_url || '',
         cfworker_admin_token: cfg.cfworker_admin_token || '',
         cfworker_custom_auth: cfg.cfworker_custom_auth || '',
-        cfworker_domain: cfg.cfworker_domain || '',
+        cfworker_domain_override: '',
         cfworker_fingerprint: cfg.cfworker_fingerprint || '',
         smstome_cookie: cfg.smstome_cookie || '',
         smstome_country_slugs: cfg.smstome_country_slugs || '',
@@ -86,7 +93,14 @@ export default function Register() {
           laoudo_auth: values.laoudo_auth,
           laoudo_email: values.laoudo_email,
           laoudo_account_id: values.laoudo_account_id,
+          maliapi_base_url: values.maliapi_base_url,
+          maliapi_api_key: values.maliapi_api_key,
+          maliapi_domain: values.maliapi_domain,
+          maliapi_auto_domain_strategy: values.maliapi_auto_domain_strategy,
           moemail_api_url: values.moemail_api_url,
+          skymail_api_base: values.skymail_api_base,
+          skymail_token: values.skymail_token,
+          skymail_domain: values.skymail_domain,
           duckmail_api_url: values.duckmail_api_url,
           duckmail_provider_url: values.duckmail_provider_url,
           duckmail_bearer: values.duckmail_bearer,
@@ -97,7 +111,7 @@ export default function Register() {
           cfworker_api_url: values.cfworker_api_url,
           cfworker_admin_token: values.cfworker_admin_token,
           cfworker_custom_auth: values.cfworker_custom_auth,
-          cfworker_domain: values.cfworker_domain,
+          cfworker_domain_override: values.cfworker_domain_override,
           cfworker_fingerprint: values.cfworker_fingerprint,
           smstome_cookie: values.smstome_cookie,
           smstome_country_slugs: values.smstome_country_slugs,
@@ -161,6 +175,8 @@ export default function Register() {
         count: 1,
         register_delay_seconds: 0,
         solver_url: '',
+        maliapi_base_url: 'https://maliapi.215.im/v1',
+        maliapi_auto_domain_strategy: 'balanced',
       }}>
         <Card title="基本配置" style={{ marginBottom: 16 }}>
           <Form.Item name="platform" label="平台" rules={[{ required: true }]}>
@@ -209,6 +225,8 @@ export default function Register() {
               options={[
                 { value: 'moemail', label: 'MoeMail (sall.cc)' },
                 { value: 'tempmail_lol', label: 'TempMail.lol' },
+                { value: 'skymail', label: 'SkyMail (CloudMail)' },
+                { value: 'maliapi', label: 'YYDS Mail / MaliAPI' },
                 { value: 'duckmail', label: 'DuckMail' },
                 { value: 'freemail', label: 'Freemail' },
                 { value: 'laoudo', label: 'Laoudo' },
@@ -217,6 +235,19 @@ export default function Register() {
               ]}
             />
           </Form.Item>
+          {mailProvider === 'skymail' && (
+            <>
+              <Form.Item name="skymail_api_base" label="API Base">
+                <Input placeholder="https://api.skymail.ink" />
+              </Form.Item>
+              <Form.Item name="skymail_token" label="Authorization Token">
+                <Input.Password placeholder="Bearer xxxxx" />
+              </Form.Item>
+              <Form.Item name="skymail_domain" label="邮箱域名">
+                <Input placeholder="mail.example.com" />
+              </Form.Item>
+            </>
+          )}
           {mailProvider === 'laoudo' && (
             <>
               <Form.Item name="laoudo_email" label="邮箱地址">
@@ -227,6 +258,28 @@ export default function Register() {
               </Form.Item>
               <Form.Item name="laoudo_auth" label="JWT Token">
                 <Input placeholder="eyJ..." />
+              </Form.Item>
+            </>
+          )}
+          {mailProvider === 'maliapi' && (
+            <>
+              <Form.Item name="maliapi_base_url" label="API URL">
+                <Input placeholder="https://maliapi.215.im/v1" />
+              </Form.Item>
+              <Form.Item name="maliapi_api_key" label="API Key">
+                <Input.Password placeholder="AC-..." />
+              </Form.Item>
+              <Form.Item name="maliapi_domain" label="邮箱域名（可选）">
+                <Input placeholder="example.com" />
+              </Form.Item>
+              <Form.Item name="maliapi_auto_domain_strategy" label="自动域名策略">
+                <Select
+                  options={[
+                    { value: 'balanced', label: 'balanced' },
+                    { value: 'prefer_owned', label: 'prefer_owned' },
+                    { value: 'prefer_public', label: 'prefer_public' },
+                  ]}
+                />
               </Form.Item>
             </>
           )}
@@ -241,7 +294,11 @@ export default function Register() {
               <Form.Item name="cfworker_custom_auth" label="Site Password">
                 <Input.Password placeholder="private site password" />
               </Form.Item>
-              <Form.Item name="cfworker_domain" label="域名">
+              <Form.Item
+                name="cfworker_domain_override"
+                label="单次任务指定域名（可选）"
+                extra="留空时将从设置页已启用的域名列表中随机选择。"
+              >
                 <Input placeholder="example.com" />
               </Form.Item>
               <Form.Item name="cfworker_fingerprint" label="Fingerprint (可选)">

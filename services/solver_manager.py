@@ -5,6 +5,7 @@ import subprocess
 import sys
 import threading
 import time
+from urllib.parse import urlsplit
 
 import requests
 
@@ -17,18 +18,37 @@ _runtime_port: int | None = None
 
 
 def _build_solver_url(port: int) -> str:
-    return f"http://localhost:{port}"
+    return f"http://127.0.0.1:{port}"
 
 
-def _probe_solver(port: int) -> bool:
+def _configured_solver_url() -> str:
+    return str(os.getenv("LOCAL_SOLVER_URL", "") or "").strip().rstrip("/")
+
+
+def _probe_url(url: str) -> bool:
     try:
-        r = requests.get(f"{_build_solver_url(port)}/", timeout=2)
+        r = requests.get(f"{url.rstrip('/')}/", timeout=2)
         if r.status_code >= 500:
             return False
         text = r.text or ""
         return "Turnstile Solver" in text
     except Exception:
         return False
+
+
+def _probe_solver(port: int) -> bool:
+    return _probe_url(_build_solver_url(port))
+
+
+def _solver_enabled() -> bool:
+    return os.getenv("APP_ENABLE_SOLVER", "1").lower() not in {"0", "false", "no"}
+
+def _solver_bind_host() -> str:
+    return os.getenv("SOLVER_BIND_HOST", "0.0.0.0")
+
+
+def _solver_browser_type() -> str:
+    return os.getenv("SOLVER_BROWSER_TYPE", SOLVER_BROWSER_TYPE).strip() or SOLVER_BROWSER_TYPE
 
 
 def _port_is_free(port: int) -> bool:
@@ -60,6 +80,14 @@ def get_runtime_port() -> int:
     global _runtime_port
     if _runtime_port and _probe_solver(_runtime_port):
         return _runtime_port
+    configured_url = _configured_solver_url()
+    if configured_url and _probe_url(configured_url):
+        parsed = urlsplit(configured_url)
+        if parsed.port:
+            return parsed.port
+        if parsed.scheme == "https":
+            return 443
+        return 80
     if _probe_solver(REQUESTED_SOLVER_PORT):
         _runtime_port = REQUESTED_SOLVER_PORT
         return _runtime_port
@@ -67,18 +95,26 @@ def get_runtime_port() -> int:
 
 
 def get_runtime_url() -> str:
-    return _build_solver_url(get_runtime_port())
+    if _runtime_port and _probe_solver(_runtime_port):
+        return _build_solver_url(_runtime_port)
+    configured_url = _configured_solver_url()
+    if configured_url and _probe_url(configured_url):
+        return configured_url
+    if _probe_solver(REQUESTED_SOLVER_PORT):
+        return _build_solver_url(REQUESTED_SOLVER_PORT)
+    return configured_url or _build_solver_url(get_runtime_port())
 
 
 def get_status() -> dict:
+    url = get_runtime_url()
     port = get_runtime_port()
-    running = _probe_solver(port)
+    running = _probe_url(url)
     return {
         "running": running,
-        "url": _build_solver_url(port),
+        "url": url,
         "port": port,
         "requested_port": REQUESTED_SOLVER_PORT,
-        "browser_type": SOLVER_BROWSER_TYPE,
+        "browser_type": _solver_browser_type(),
         "using_fallback_port": port != REQUESTED_SOLVER_PORT,
     }
 
@@ -91,6 +127,9 @@ def start():
     global _proc, _log_file, _runtime_port
     with _lock:
         status = get_status()
+        if not _solver_enabled():
+            print("[Solver] 已禁用，跳过自动启动")
+            return
         if status["running"]:
             _runtime_port = status["port"]
             print(f"[Solver] 已在运行: {status['url']}")
@@ -111,7 +150,9 @@ def start():
                 "-u",
                 solver_script,
                 "--browser_type",
-                SOLVER_BROWSER_TYPE,
+                _solver_browser_type(),
+                "--host",
+                _solver_bind_host(),
                 "--port",
                 str(solver_port),
             ],

@@ -36,6 +36,8 @@ def _print_runtime_info() -> None:
     current_env = _detect_conda_env()
     print(f"[Runtime] Python: {sys.executable}")
     print(f"[Runtime] Conda Env: {current_env or '未检测到'}")
+    if EXPECTED_CONDA_ENV == "docker":
+        return
     if current_env and current_env != EXPECTED_CONDA_ENV:
         print(
             f"[WARN] 当前环境为 '{current_env}'，推荐使用 '{EXPECTED_CONDA_ENV}' 启动，"

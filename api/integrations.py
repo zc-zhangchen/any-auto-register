@@ -9,12 +9,17 @@ from sqlmodel import Session, select
 from core.base_platform import Account, AccountStatus
 from core.db import AccountModel, engine
 from services.external_apps import install, list_status, start, start_all, stop, stop_all
+from services.chatgpt_sync import has_cpa_upload_success, upload_account_model_to_cpa
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 
 
 class BackfillRequest(BaseModel):
     platforms: list[str] = Field(default_factory=lambda: ["grok", "kiro"])
+    account_ids: list[int] = Field(default_factory=list)
+    pending_only: bool = False
+    status: Optional[str] = None
+    email: Optional[str] = None
 
 
 def _to_account(model: AccountModel) -> Account:
@@ -65,58 +70,79 @@ def backfill_integrations(body: BackfillRequest):
     summary = {"total": 0, "success": 0, "failed": 0, "items": []}
     targets = set(body.platforms or [])
 
-    if "grok" in targets:
-        from services.grok2api_runtime import ensure_grok2api_ready
-
-        ok, msg = ensure_grok2api_ready()
-        if not ok:
-            return {
-                "total": 0,
-                "success": 0,
-                "failed": 0,
-                "items": [{"platform": "grok", "email": "", "results": [{"name": "grok2api", "ok": False, "msg": msg}]}],
-            }
-
     with Session(engine) as s:
-        rows = s.exec(
-            select(AccountModel).where(AccountModel.platform.in_(targets))
-        ).all()
+        q = select(AccountModel)
+        if body.account_ids:
+            q = q.where(AccountModel.id.in_(body.account_ids))
+            if targets:
+                q = q.where(AccountModel.platform.in_(targets))
+        elif targets:
+            q = q.where(AccountModel.platform.in_(targets))
+        else:
+            return summary
 
-    for row in rows:
-        item = {"platform": row.platform, "email": row.email, "results": []}
-        try:
-            account = _to_account(row)
-            results = []
-            if row.platform == "grok":
-                from core.config_store import config_store
-                from platforms.grok.grok2api_upload import upload_to_grok2api
+        if body.status:
+            q = q.where(AccountModel.status == body.status)
+        if body.email:
+            q = q.where(AccountModel.email.contains(body.email))
 
-                api_url = str(config_store.get("grok2api_url", "") or "").strip() or "http://127.0.0.1:8011"
-                app_key = str(config_store.get("grok2api_app_key", "") or "").strip() or "grok2api"
-                ok, msg = upload_to_grok2api(account, api_url=api_url, app_key=app_key)
-                results.append({"name": "grok2api", "ok": ok, "msg": msg})
+        rows = s.exec(q).all()
+        if body.pending_only:
+            rows = [row for row in rows if row.platform != "chatgpt" or not has_cpa_upload_success(row)]
 
-            elif row.platform == "kiro":
-                from core.config_store import config_store
-                from platforms.kiro.account_manager_upload import upload_to_kiro_manager
+        if any(row.platform == "grok" for row in rows):
+            from services.grok2api_runtime import ensure_grok2api_ready
 
-                configured_path = str(config_store.get("kiro_manager_path", "") or "").strip() or None
-                ok, msg = upload_to_kiro_manager(account, path=configured_path)
-                results.append({"name": "Kiro Manager", "ok": ok, "msg": msg})
+            ok, msg = ensure_grok2api_ready()
+            if not ok:
+                return {
+                    "total": 0,
+                    "success": 0,
+                    "failed": 0,
+                    "items": [{"platform": "grok", "email": "", "results": [{"name": "grok2api", "ok": False, "msg": msg}]}],
+                }
 
-            if not results:
-                item["results"].append({"name": "skip", "ok": False, "msg": "未配置对应导入目标"})
-                summary["failed"] += 1
-            else:
-                item["results"] = results
-                if all(r.get("ok") for r in results):
-                    summary["success"] += 1
-                else:
+        for row in rows:
+            item = {"platform": row.platform, "email": row.email, "results": []}
+            try:
+                results = []
+                if row.platform == "chatgpt":
+                    ok, msg = upload_account_model_to_cpa(row, session=s, commit=True)
+                    results.append({"name": "CPA", "ok": ok, "msg": msg})
+
+                elif row.platform == "grok":
+                    from core.config_store import config_store
+                    from platforms.grok.grok2api_upload import upload_to_grok2api
+
+                    account = _to_account(row)
+                    api_url = str(config_store.get("grok2api_url", "") or "").strip() or "http://127.0.0.1:8011"
+                    app_key = str(config_store.get("grok2api_app_key", "") or "").strip() or "grok2api"
+                    ok, msg = upload_to_grok2api(account, api_url=api_url, app_key=app_key)
+                    results.append({"name": "grok2api", "ok": ok, "msg": msg})
+
+                elif row.platform == "kiro":
+                    from core.config_store import config_store
+                    from platforms.kiro.account_manager_upload import upload_to_kiro_manager
+
+                    account = _to_account(row)
+                    configured_path = str(config_store.get("kiro_manager_path", "") or "").strip() or None
+                    ok, msg = upload_to_kiro_manager(account, path=configured_path)
+                    results.append({"name": "Kiro Manager", "ok": ok, "msg": msg})
+
+                if not results:
+                    item["results"].append({"name": "skip", "ok": False, "msg": "未配置对应导入目标"})
                     summary["failed"] += 1
-        except Exception as e:
-            item["results"].append({"name": "error", "ok": False, "msg": str(e)})
-            summary["failed"] += 1
-        summary["items"].append(item)
-        summary["total"] += 1
+                else:
+                    item["results"] = results
+                    if all(r.get("ok") for r in results):
+                        summary["success"] += 1
+                    else:
+                        summary["failed"] += 1
+            except Exception as e:
+                s.rollback()
+                item["results"].append({"name": "error", "ok": False, "msg": str(e)})
+                summary["failed"] += 1
+            summary["items"].append(item)
+            summary["total"] += 1
 
     return summary

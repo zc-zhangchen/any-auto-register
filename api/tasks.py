@@ -3,6 +3,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 from typing import Optional
+from copy import deepcopy
 from core.db import TaskLog, engine
 import time, json, asyncio, threading, logging
 
@@ -46,6 +47,75 @@ class RegisterTaskRequest(BaseModel):
 
 class TaskLogBatchDeleteRequest(BaseModel):
     ids: list[int]
+
+
+def _prepare_register_request(req: RegisterTaskRequest) -> RegisterTaskRequest:
+    from core.config_store import config_store
+
+    req_data = req.model_dump()
+    req_data["extra"] = deepcopy(req_data.get("extra") or {})
+    prepared = RegisterTaskRequest(**req_data)
+
+    mail_provider = prepared.extra.get("mail_provider") or config_store.get("mail_provider", "")
+    if mail_provider == "luckmail":
+        platform = prepared.platform
+        if platform in ("tavily", "openblocklabs"):
+            raise HTTPException(400, f"LuckMail 渠道暂时不支持 {platform} 项目注册")
+
+        mapping = {
+            "trae": "trae",
+            "cursor": "cursor",
+            "grok": "grok",
+            "kiro": "kiro",
+            "chatgpt": "openai"
+        }
+        prepared.extra["luckmail_project_code"] = mapping.get(platform, platform)
+
+    return prepared
+
+
+def _create_task_record(task_id: str, req: RegisterTaskRequest, source: str, meta: dict | None = None):
+    with _tasks_lock:
+        _tasks[task_id] = {
+            "id": task_id,
+            "status": "pending",
+            "platform": req.platform,
+            "source": source,
+            "meta": meta or {},
+            "progress": f"0/{req.count}",
+            "logs": [],
+        }
+
+
+def enqueue_register_task(
+    req: RegisterTaskRequest,
+    *,
+    background_tasks: BackgroundTasks | None = None,
+    source: str = "manual",
+    meta: dict | None = None,
+) -> str:
+    prepared = _prepare_register_request(req)
+    task_id = f"task_{int(time.time()*1000)}"
+    _create_task_record(task_id, prepared, source, meta)
+    if background_tasks is None:
+        thread = threading.Thread(target=_run_register, args=(task_id, prepared), daemon=True)
+        thread.start()
+    else:
+        background_tasks.add_task(_run_register, task_id, prepared)
+    return task_id
+
+
+def has_active_register_task(*, platform: str | None = None, source: str | None = None) -> bool:
+    with _tasks_lock:
+        for task in _tasks.values():
+            if task.get("status") not in ("pending", "running"):
+                continue
+            if platform and task.get("platform") != platform:
+                continue
+            if source and task.get("source") != source:
+                continue
+            return True
+    return False
 
 
 def _log(task_id: str, msg: str):
@@ -168,11 +238,11 @@ def _run_register(task_id: str, req: RegisterTaskRequest):
                             account.extra.setdefault("luckmail_domain", merged_extra.get("luckmail_domain"))
                         if merged_extra.get("luckmail_base_url"):
                             account.extra.setdefault("luckmail_base_url", merged_extra.get("luckmail_base_url"))
-                save_account(account)
+                saved_account = save_account(account)
                 if _proxy: proxy_pool.report_success(_proxy)
                 _log(task_id, f"✓ 注册成功: {account.email}")
                 _save_task_log(req.platform, account.email, "success")
-                _auto_upload_integrations(task_id, account)
+                _auto_upload_integrations(task_id, saved_account or account)
                 cashier_url = (account.extra or {}).get("cashier_url", "")
                 if cashier_url:
                     _log(task_id, f"  [升级链接] {cashier_url}")
@@ -220,26 +290,7 @@ def create_register_task(
     req: RegisterTaskRequest,
     background_tasks: BackgroundTasks,
 ):
-    mail_provider = req.extra.get("mail_provider")
-    if mail_provider == "luckmail":
-        platform = req.platform
-        if platform in ("tavily", "openblocklabs"):
-            raise HTTPException(400, f"LuckMail 渠道暂时不支持 {platform} 项目注册")
-        
-        mapping = {
-            "trae": "trae",
-            "cursor": "cursor",
-            "grok": "grok",
-            "kiro": "kiro",
-            "chatgpt": "openai"
-        }
-        req.extra["luckmail_project_code"] = mapping.get(platform, platform)
-
-    task_id = f"task_{int(time.time()*1000)}"
-    with _tasks_lock:
-        _tasks[task_id] = {"id": task_id, "status": "pending",
-                           "progress": f"0/{req.count}", "logs": []}
-    background_tasks.add_task(_run_register, task_id, req)
+    task_id = enqueue_register_task(req, background_tasks=background_tasks)
     return {"task_id": task_id}
 
 

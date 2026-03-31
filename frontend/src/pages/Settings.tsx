@@ -10,6 +10,7 @@ import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   SyncOutlined,
+  PlusOutlined,
 } from '@ant-design/icons'
 import { apiFetch } from '@/lib/utils'
 
@@ -17,11 +18,18 @@ const SELECT_FIELDS: Record<string, { label: string; value: string }[]> = {
   mail_provider: [
     { label: 'Laoudo（固定邮箱）', value: 'laoudo' },
     { label: 'TempMail.lol（自动生成）', value: 'tempmail_lol' },
+    { label: 'SkyMail（CloudMail 接口）', value: 'skymail' },
     { label: 'DuckMail（自动生成）', value: 'duckmail' },
     { label: 'MoeMail (sall.cc)', value: 'moemail' },
+    { label: 'YYDS Mail / MaliAPI', value: 'maliapi' },
     { label: 'Freemail（自建 CF Worker）', value: 'freemail' },
     { label: 'CF Worker（自建域名）', value: 'cfworker' },
     { label: 'LuckMail（订单接码 / 已购邮箱）', value: 'luckmail' },
+  ],
+  maliapi_auto_domain_strategy: [
+    { label: 'balanced', value: 'balanced' },
+    { label: 'prefer_owned', value: 'prefer_owned' },
+    { label: 'prefer_public', value: 'prefer_public' },
   ],
   default_executor: [
     { label: 'API 协议（无浏览器）', value: 'protocol' },
@@ -32,6 +40,14 @@ const SELECT_FIELDS: Record<string, { label: string; value: string }[]> = {
     { label: 'YesCaptcha', value: 'yescaptcha' },
     { label: '本地 Solver (Chromium 默认)', value: 'local_solver' },
     { label: '手动', value: 'manual' },
+  ],
+  cpa_cleanup_enabled: [
+    { label: '关闭', value: '0' },
+    { label: '开启', value: '1' },
+  ],
+  codex_proxy_upload_type: [
+    { label: 'AT（Access Token，推荐）', value: 'at' },
+    { label: 'RT（Refresh Token）', value: 'rt' },
   ],
 }
 
@@ -83,6 +99,25 @@ const TAB_ITEMS = [
         fields: [{ key: 'moemail_api_url', label: 'API URL', placeholder: 'https://sall.cc' }],
       },
       {
+        title: 'SkyMail',
+        desc: 'CloudMail 兼容接口（addUser / emailList）',
+        fields: [
+          { key: 'skymail_api_base', label: 'API Base', placeholder: 'https://api.skymail.ink' },
+          { key: 'skymail_token', label: 'Authorization Token', secret: true },
+          { key: 'skymail_domain', label: '邮箱域名', placeholder: 'mail.example.com' },
+        ],
+      },
+      {
+        title: 'YYDS Mail / MaliAPI',
+        desc: '基于 API Key 创建临时邮箱并轮询收件箱消息',
+        fields: [
+          { key: 'maliapi_base_url', label: 'API URL', placeholder: 'https://maliapi.215.im/v1' },
+          { key: 'maliapi_api_key', label: 'API Key', secret: true },
+          { key: 'maliapi_domain', label: '邮箱域名（可选）', placeholder: 'example.com' },
+          { key: 'maliapi_auto_domain_strategy', label: '自动域名策略', type: 'select' },
+        ],
+      },
+      {
         title: 'TempMail.lol',
         desc: '自动生成邮箱，无需配置，需要代理访问（CN IP 被封）',
         fields: [],
@@ -94,6 +129,8 @@ const TAB_ITEMS = [
           { key: 'duckmail_api_url', label: 'Web URL', placeholder: 'https://www.duckmail.sbs' },
           { key: 'duckmail_provider_url', label: 'Provider URL', placeholder: 'https://api.duckmail.sbs' },
           { key: 'duckmail_bearer', label: 'Bearer Token', placeholder: 'kevin273945', secret: true },
+          { key: 'duckmail_domain', label: '自定义域名', placeholder: '留空则从 Provider URL 推导' },
+          { key: 'duckmail_api_key', label: 'API Key（私有域名）', placeholder: 'dk_xxx（domain.duckmail.sbs 获取）', secret: true },
         ],
       },
       {
@@ -103,7 +140,6 @@ const TAB_ITEMS = [
           { key: 'cfworker_api_url', label: 'API URL', placeholder: 'https://apimail.example.com' },
           { key: 'cfworker_admin_token', label: '管理员 Token', secret: true },
           { key: 'cfworker_custom_auth', label: '站点密码', secret: true },
-          { key: 'cfworker_domain', label: '邮箱域名', placeholder: 'example.com' },
           { key: 'cfworker_fingerprint', label: 'Fingerprint', placeholder: '6703363b...' },
         ],
       },
@@ -148,11 +184,39 @@ const TAB_ITEMS = [
         ],
       },
       {
+        title: 'Sub2API 面板',
+        desc: '注册完成后自动上传到 Sub2API 管理后台',
+        fields: [
+          { key: 'sub2api_api_url', label: 'API URL', placeholder: 'https://your-sub2api.example.com' },
+          { key: 'sub2api_api_key', label: 'API Key', secret: true },
+        ],
+      },
+      {
+        title: 'CPA 自动维护',
+        desc: '定时删除 status=error 的凭证，剩余数量低于阈值时自动按现有配置补注册 ChatGPT',
+        fields: [
+          { key: 'cpa_cleanup_enabled', label: '自动维护', type: 'select' },
+          { key: 'cpa_cleanup_interval_minutes', label: '检查间隔（分钟）', placeholder: '60' },
+          { key: 'cpa_cleanup_threshold', label: '最低凭证阈值', placeholder: '5' },
+          { key: 'cpa_cleanup_concurrency', label: '补注册并发数', placeholder: '1' },
+          { key: 'cpa_cleanup_register_delay_seconds', label: '每个注册延迟（秒）', placeholder: '0' },
+        ],
+      },
+      {
         title: 'Team Manager',
         desc: '上传到自建 Team Manager 系统',
         fields: [
           { key: 'team_manager_url', label: 'API URL', placeholder: 'https://your-tm.example.com' },
           { key: 'team_manager_key', label: 'API Key', secret: true },
+        ],
+      },
+      {
+        title: 'CodexProxy',
+        desc: '注册完成后自动上传到 CodexProxy 管理平台',
+        fields: [
+          { key: 'codex_proxy_url', label: 'API URL', placeholder: 'https://your-codex-proxy.example.com' },
+          { key: 'codex_proxy_key', label: 'Admin Key', secret: true },
+          { key: 'codex_proxy_upload_type', label: '上传类型' },
         ],
       },
       {
@@ -261,6 +325,41 @@ function formatResultText(data: unknown) {
   }
 }
 
+function normalizeDomainList(input: unknown): string[] {
+  const items = Array.isArray(input) ? input : []
+  const seen = new Set<string>()
+  const domains: string[] = []
+  for (const item of items) {
+    const domain = String(item || '').trim().toLowerCase().replace(/^@/, '')
+    if (!domain || seen.has(domain)) continue
+    seen.add(domain)
+    domains.push(domain)
+  }
+  return domains
+}
+
+function parseStoredDomainList(value: unknown): string[] {
+  if (Array.isArray(value)) return normalizeDomainList(value)
+  if (typeof value !== 'string') return []
+
+  const text = value.trim()
+  if (!text) return []
+
+  try {
+    const parsed = JSON.parse(text)
+    if (Array.isArray(parsed)) {
+      return normalizeDomainList(parsed)
+    }
+  } catch {}
+
+  return normalizeDomainList(
+    text
+      .split('\n')
+      .flatMap((line) => line.split(','))
+      .map((item) => item.trim()),
+  )
+}
+
 function ConfigField({ field }: { field: FieldConfig }) {
   const [showSecret, setShowSecret] = useState(false)
   const options = SELECT_FIELDS[field.key]
@@ -295,6 +394,133 @@ function ConfigSection({ section }: { section: SectionConfig }) {
       {section.fields.map((field) => (
         <ConfigField key={field.key} field={field} />
       ))}
+    </Card>
+  )
+}
+
+function CFWorkerDomainPoolSection({ form }: { form: any }) {
+  const watchedDomains = Form.useWatch('cfworker_domains', form) || []
+  const watchedEnabledDomains = Form.useWatch('cfworker_enabled_domains', form) || []
+  const normalizedDomains = normalizeDomainList(watchedDomains)
+  const enabledDomains = normalizeDomainList(watchedEnabledDomains).filter((domain) => normalizedDomains.includes(domain))
+
+  const updateEnabledDomains = (nextDomains: string[]) => {
+    form.setFieldValue('cfworker_enabled_domains', normalizeDomainList(nextDomains))
+  }
+
+  const toggleEnabledDomain = (domain: string, checked: boolean) => {
+    if (checked) {
+      updateEnabledDomains([...enabledDomains, domain])
+      return
+    }
+    updateEnabledDomains(enabledDomains.filter((item) => item !== domain))
+  }
+
+  return (
+    <Card
+      title="CF Worker 域名池"
+      extra={<span style={{ fontSize: 12, color: '#7a8ba3' }}>注册时会从已启用域名中随机选择一个</span>}
+      style={{ marginBottom: 16 }}
+    >
+      <Form.List name="cfworker_domains">
+        {(fields, { add, remove }) => (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {fields.map((field) => (
+              <Space key={field.key} align="start" style={{ display: 'flex' }}>
+                <Form.Item
+                  {...field}
+                  label={field.name === 0 ? '全部域名' : ''}
+                  style={{ flex: 1, marginBottom: 0 }}
+                  rules={[
+                    {
+                      validator: async (_, value) => {
+                        if (!String(value || '').trim()) {
+                          throw new Error('请输入域名')
+                        }
+                      },
+                    },
+                  ]}
+                >
+                  <Input placeholder="example.com" />
+                </Form.Item>
+                <Button
+                  danger
+                  onClick={() => {
+                    const currentDomains = Array.isArray(form.getFieldValue('cfworker_domains'))
+                      ? [...form.getFieldValue('cfworker_domains')]
+                      : []
+                    const removedDomain = String(currentDomains[field.name] || '').trim().toLowerCase().replace(/^@/, '')
+                    remove(field.name)
+                    if (!removedDomain) return
+                    const enabledDomains = normalizeDomainList(form.getFieldValue('cfworker_enabled_domains'))
+                    form.setFieldValue(
+                      'cfworker_enabled_domains',
+                      enabledDomains.filter((domain) => domain !== removedDomain),
+                    )
+                  }}
+                >
+                  删除
+                </Button>
+              </Space>
+            ))}
+            {fields.length === 0 ? (
+              <Typography.Text type="secondary">还没有配置域名。添加后即可在下方选择启用项。</Typography.Text>
+            ) : null}
+            <Button type="dashed" onClick={() => add('')} icon={<PlusOutlined />} block>
+              添加域名
+            </Button>
+          </div>
+        )}
+      </Form.List>
+
+      <Form.Item name="cfworker_enabled_domains" hidden>
+        <Select mode="multiple" options={normalizedDomains.map((domain) => ({ label: domain, value: domain }))} />
+      </Form.Item>
+
+      <div style={{ marginTop: 16 }}>
+        <div style={{ marginBottom: 8, fontWeight: 500 }}>已启用域名</div>
+        {enabledDomains.length > 0 ? (
+          <Space wrap>
+            {enabledDomains.map((domain) => (
+              <Tag
+                key={domain}
+                color="blue"
+                closable
+                onClose={(event) => {
+                  event.preventDefault()
+                  updateEnabledDomains(enabledDomains.filter((item) => item !== domain))
+                }}
+              >
+                {domain}
+              </Tag>
+            ))}
+          </Space>
+        ) : (
+          <Typography.Text type="secondary">暂无启用域名，点击下方域名即可启用。</Typography.Text>
+        )}
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <div style={{ marginBottom: 8, fontWeight: 500 }}>点击切换启用状态</div>
+        {normalizedDomains.length > 0 ? (
+          <Space wrap>
+            {normalizedDomains.map((domain) => (
+              <Tag.CheckableTag
+                key={domain}
+                checked={enabledDomains.includes(domain)}
+                onChange={(checked) => toggleEnabledDomain(domain, checked)}
+              >
+                {domain}
+              </Tag.CheckableTag>
+            ))}
+          </Space>
+        ) : (
+          <Typography.Text type="secondary">请先在上方添加域名。</Typography.Text>
+        )}
+      </div>
+      <Typography.Text type="secondary" style={{ display: 'block', marginTop: 12 }}>
+        仅已启用域名会参与注册；点击已启用标签可直接移除。
+      </Typography.Text>
     </Card>
   )
 }
@@ -552,18 +778,43 @@ export default function Settings() {
 
   useEffect(() => {
     apiFetch('/config').then((data) => {
+      if (!data.maliapi_base_url) {
+        data.maliapi_base_url = 'https://maliapi.215.im/v1'
+      }
       if (!data.luckmail_base_url) {
         data.luckmail_base_url = 'https://mails.luckyous.com/'
       }
+      data.cfworker_domains = parseStoredDomainList(data.cfworker_domains)
+      data.cfworker_enabled_domains = parseStoredDomainList(data.cfworker_enabled_domains)
       form.setFieldsValue(data)
     })
-  }, [])
+  }, [form])
 
   const save = async () => {
     setSaving(true)
     try {
-      const values = form.getFieldsValue()
+      const values = form.getFieldsValue(true)
+      const domains = normalizeDomainList(values.cfworker_domains)
+      const enabledDomains = normalizeDomainList(values.cfworker_enabled_domains).filter((domain) => domains.includes(domain))
+
+      if (domains.length > 0 && enabledDomains.length === 0) {
+        setActiveTab('mailbox')
+        message.error('CF Worker 至少需要启用一个域名')
+        return
+      }
+
+      values.cfworker_domains = JSON.stringify(domains)
+      values.cfworker_enabled_domains = JSON.stringify(enabledDomains)
+      if (domains.length > 0) {
+        values.cfworker_domain = ''
+      }
+
       await apiFetch('/config', { method: 'PUT', body: JSON.stringify({ data: values }) })
+      form.setFieldsValue({
+        cfworker_domains: domains,
+        cfworker_enabled_domains: enabledDomains,
+        cfworker_domain: domains.length > 0 ? '' : values.cfworker_domain,
+      })
       message.success('保存成功')
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
@@ -608,6 +859,7 @@ export default function Settings() {
               {currentTab.sections.map((section) => (
                 <ConfigSection key={section.title} section={section} />
               ))}
+              {activeTab === 'mailbox' ? <CFWorkerDomainPoolSection form={form} /> : null}
               <Button type="primary" icon={<SaveOutlined />} onClick={save} loading={saving} block>
                 {saved ? '已保存 ✓' : '保存配置'}
               </Button>

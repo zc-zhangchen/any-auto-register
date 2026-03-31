@@ -3,6 +3,10 @@ import os
 from abc import ABC, abstractmethod
 
 
+def _default_solver_url() -> str:
+    return os.getenv("LOCAL_SOLVER_URL") or f"http://127.0.0.1:{os.getenv('SOLVER_PORT', '8889')}"
+
+
 class BaseCaptcha(ABC):
     @abstractmethod
     def solve_turnstile(self, page_url: str, site_key: str) -> str:
@@ -58,10 +62,8 @@ class ManualCaptcha(BaseCaptcha):
 class LocalSolverCaptcha(BaseCaptcha):
     """调用本地 api_solver 服务解 Turnstile。"""
 
-    def __init__(self, solver_url: str = ""):
-        if not solver_url:
-            solver_url = os.getenv("LOCAL_SOLVER_URL", "http://localhost:8889")
-        self.solver_url = solver_url.rstrip("/")
+    def __init__(self, solver_url: str | None = None):
+        self.solver_url = (solver_url or _default_solver_url()).rstrip("/")
 
     def solve_turnstile(self, page_url: str, site_key: str) -> str:
         import requests, time

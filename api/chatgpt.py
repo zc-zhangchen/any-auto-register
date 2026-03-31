@@ -134,3 +134,24 @@ def upload_cpa(account_id: int, req: CpaUploadReq,
     token_data = generate_token_json(codex_acc)
     ok, msg = upload_to_cpa(token_data, api_url=req.api_url, api_key=req.api_key)
     return {"ok": ok, "message": msg}
+
+
+class Sub2ApiUploadReq(BaseModel):
+    api_url: str
+    api_key: str = ""
+
+
+@router.post("/{account_id}/upload-sub2api")
+def upload_sub2api(account_id: int, req: Sub2ApiUploadReq,
+                   session: Session = Depends(get_session)):
+    acc = _get_account(account_id, session)
+    codex_acc = _to_codex_account(acc)
+
+    from platforms.chatgpt.sub2api_upload import upload_to_sub2api
+
+    ok, msg = upload_to_sub2api(
+        codex_acc,
+        api_url=req.api_url,
+        api_key=req.api_key,
+    )
+    return {"ok": ok, "message": msg}

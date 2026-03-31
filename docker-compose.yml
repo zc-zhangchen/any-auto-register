@@ -3,24 +3,27 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        CAMOUFOX_VERSION: ${CAMOUFOX_VERSION:-135.0.1}
+        CAMOUFOX_RELEASE: ${CAMOUFOX_RELEASE:-beta.24}
     container_name: any-auto-register
     init: true
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
       HOST: 0.0.0.0
       PORT: "8000"
       APP_RELOAD: "0"
       APP_CONDA_ENV: docker
       APP_RUNTIME_DIR: /runtime
+      APP_ENABLE_SOLVER: "1"
       SOLVER_PORT: "8889"
-      SOLVER_BROWSER_TYPE: chromium
+      SOLVER_BIND_HOST: 0.0.0.0
+      LOCAL_SOLVER_URL: http://127.0.0.1:8889
+      SOLVER_BROWSER_TYPE: ${SOLVER_BROWSER_TYPE:-camoufox}
     ports:
       - "8000:8000"
       - "8889:8889"
     volumes:
-      - app_runtime:/runtime
-
-volumes:
-  app_runtime:
+      - ./data:/runtime
+      - ./_ext_targets:/app/_ext_targets
+    shm_size: "1gb"

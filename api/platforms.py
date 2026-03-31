@@ -6,4 +6,5 @@ router = APIRouter(prefix="/platforms", tags=["platforms"])
 
 @router.get("")
 def get_platforms():
-    return list_platforms()
+    platforms = list_platforms()
+    return [p for p in platforms if p["name"] not in ("cursor", "tavily")]

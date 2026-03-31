@@ -1,5 +1,6 @@
 """数据库模型 - SQLite via SQLModel"""
 from datetime import datetime, timezone
+import os
 from typing import Optional
 from sqlmodel import Field, SQLModel, create_engine, Session, select
 import json
@@ -8,7 +9,7 @@ import json
 def _utcnow():
     return datetime.now(timezone.utc)
 
-DATABASE_URL = "sqlite:///account_manager.db"
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///account_manager.db")
 engine = create_engine(DATABASE_URL)
 
 

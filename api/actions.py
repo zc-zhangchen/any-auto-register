@@ -52,6 +52,17 @@ def execute_action(
 
     try:
         result = instance.execute_action(action_id, account, body.params)
+        if platform == "chatgpt" and action_id == "upload_cpa":
+            from services.chatgpt_sync import update_account_model_cpa_sync
+
+            sync_msg = result.get("data") or result.get("error") or ""
+            update_account_model_cpa_sync(
+                acc_model,
+                bool(result.get("ok")),
+                str(sync_msg),
+                session=session,
+                commit=False,
+            )
         # 若操作返回了新 token，更新数据库
         if result.get("ok") and result.get("data", {}) and isinstance(result["data"], dict):
             data = result["data"]
@@ -67,7 +78,7 @@ def execute_action(
                 from datetime import datetime, timezone
                 acc_model.updated_at = datetime.now(timezone.utc)
                 session.add(acc_model)
-                session.commit()
+        session.commit()
         return result
     except NotImplementedError as e:
         raise HTTPException(400, str(e))

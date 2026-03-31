@@ -143,6 +143,89 @@ D:\codemodule\ai\any-auto-register\static
 
 ---
 
+## Docker 部署
+
+仓库根目录已提供：
+
+- `Dockerfile`
+- `docker-compose.yml`
+
+默认部署内容包括：
+
+- FastAPI 后端
+- 已构建的前端静态页
+- SQLite 数据库持久化目录 `./data`
+- 随后端自动拉起的本地 Turnstile Solver
+
+### 1. 启动
+
+```bash
+docker compose up -d --build
+```
+
+首次构建会额外下载 Python 依赖、Playwright Chromium 和 Camoufox，耗时会明显更长。
+
+当前 Dockerfile 已改为通过固定直链安装 Camoufox，避免构建时访问 GitHub Releases API 触发匿名限流。
+
+### 2. 访问
+
+```text
+http://localhost:8000
+```
+
+### 3. 停止
+
+```bash
+docker compose down
+```
+
+### 4. 查看日志
+
+```bash
+docker compose logs -f app
+```
+
+### 5. 数据持久化
+
+容器默认使用：
+
+```text
+DATABASE_URL=sqlite:////app/data/account_manager.db
+```
+
+宿主机会挂载到：
+
+```text
+./data
+```
+
+### 6. 常用环境变量
+
+| 变量名 | 默认值 | 说明 |
+| --- | --- | --- |
+| `HOST` | `0.0.0.0` | FastAPI 监听地址 |
+| `PORT` | `8000` | FastAPI 监听端口 |
+| `DATABASE_URL` | `sqlite:////app/data/account_manager.db` | SQLite 数据库地址 |
+| `APP_ENABLE_SOLVER` | `1` | 是否自动启动本地 Solver，设为 `0` 可禁用 |
+| `SOLVER_PORT` | `8889` | Solver 监听端口 |
+| `LOCAL_SOLVER_URL` | `http://127.0.0.1:8889` | 后端访问 Solver 的地址 |
+
+### 7. Camoufox 构建参数
+
+如果后续上游 Camoufox 版本有变，可以在构建时覆盖：
+
+```bash
+CAMOUFOX_VERSION=135.0.1 CAMOUFOX_RELEASE=beta.24 docker compose build app
+```
+
+### 8. Docker 部署说明
+
+- 当前 Docker 镜像主要覆盖主应用和本地 Turnstile Solver。
+- `grok2api`、`CLIProxyAPI`、`Kiro Account Manager` 的自动安装/拉起逻辑仍偏向宿主机环境，尤其依赖 `conda`、Go、Windows 可执行文件时，不建议直接放进当前 Linux 容器里启动。
+- 如果你只需要 Web UI、账号管理、任务调度和本地 Solver，当前 Compose 配置可以直接使用。
+
+***
+
 ## 启动方式
 
 ### Windows 推荐启动方式

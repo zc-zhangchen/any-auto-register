@@ -336,6 +336,127 @@ def upload_to_team_manager(
         return False, f"上传异常: {str(e)}"
 
 
+def upload_to_codex_proxy(
+    account,
+    api_url: str = None,
+    api_key: str = None,
+) -> Tuple[bool, str]:
+    """上传单账号到 CodexProxy（通过 refresh_token，不走代理）。
+    api_url / api_key 为空时自动从 ConfigStore 读取。"""
+    if not api_url:
+        api_url = _get_config_value("codex_proxy_url")
+    if not api_key:
+        api_key = _get_config_value("codex_proxy_key")
+    if not api_url:
+        return False, "CodexProxy API URL 未配置"
+    if not api_key:
+        return False, "CodexProxy Admin Key 未配置"
+
+    refresh_token = getattr(account, "refresh_token", "")
+    if not refresh_token:
+        return False, "账号缺少 refresh_token"
+
+    url = api_url.rstrip("/") + "/api/admin/accounts"
+    headers = {
+        "x-admin-key": api_key,
+        "Content-Type": "application/json",
+        "accept": "*/*",
+    }
+    payload = {
+        "refresh_token": refresh_token,
+        "proxy_url": "",
+    }
+
+    try:
+        resp = cffi_requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            proxies=None,
+            verify=False,
+            timeout=30,
+            impersonate="chrome110",
+        )
+        if resp.status_code in (200, 201):
+            try:
+                data = resp.json()
+                msg = data.get("message", "上传成功")
+            except Exception:
+                msg = "上传成功"
+            return True, msg
+        error_msg = f"上传失败: HTTP {resp.status_code}"
+        try:
+            detail = resp.json()
+            if isinstance(detail, dict):
+                error_msg = detail.get("message", error_msg)
+        except Exception:
+            error_msg = f"{error_msg} - {resp.text[:200]}"
+        return False, error_msg
+    except Exception as e:
+        logger.error(f"CodexProxy 上传异常: {e}")
+        return False, f"上传异常: {str(e)}"
+
+
+def upload_at_to_codex_proxy(
+    account,
+    api_url: str = None,
+    api_key: str = None,
+) -> Tuple[bool, str]:
+    """上传单账号到 CodexProxy（通过 access_token，走 /api/admin/accounts/at）。"""
+    if not api_url:
+        api_url = _get_config_value("codex_proxy_url")
+    if not api_key:
+        api_key = _get_config_value("codex_proxy_key")
+    if not api_url:
+        return False, "CodexProxy API URL 未配置"
+    if not api_key:
+        return False, "CodexProxy Admin Key 未配置"
+
+    access_token = getattr(account, "access_token", "")
+    if not access_token:
+        return False, "账号缺少 access_token"
+
+    url = api_url.rstrip("/") + "/api/admin/accounts/at"
+    headers = {
+        "x-admin-key": api_key,
+        "Content-Type": "application/json",
+        "accept": "*/*",
+    }
+    payload = {
+        "access_token": access_token,
+        "proxy_url": "",
+    }
+
+    try:
+        resp = cffi_requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            proxies=None,
+            verify=False,
+            timeout=30,
+            impersonate="chrome110",
+        )
+        if resp.status_code in (200, 201):
+            try:
+                data = resp.json()
+                msg = data.get("message", "上传成功")
+            except Exception:
+                msg = "上传成功"
+            return True, msg
+        error_msg = f"上传失败: HTTP {resp.status_code}"
+        try:
+            detail = resp.json()
+            if isinstance(detail, dict):
+                error_msg = detail.get("message", error_msg)
+        except Exception:
+            error_msg = f"{error_msg} - {resp.text[:200]}"
+        return False, error_msg
+    except Exception as e:
+        logger.error(f"CodexProxy AT 上传异常: {e}")
+        return False, f"上传异常: {str(e)}"
+
+
 def test_cpa_connection(api_url: str, api_token: str, proxy: str = None) -> Tuple[bool, str]:
     """测试 CPA 连接（不走代理）"""
     if not api_url:
