@@ -8,6 +8,7 @@ import logging
 from typing import Tuple
 from datetime import datetime, timezone, timedelta
 import hashlib
+from pathlib import Path
 
 from curl_cffi import requests as cffi_requests
 from curl_cffi import CurlMime
@@ -190,6 +191,25 @@ def generate_token_json(account) -> dict:
         "last_refresh": now.strftime("%Y-%m-%dT%H:%M:%S+08:00"),
         "refresh_token": refresh_token,
     }
+
+
+def _default_token_output_dir() -> Path:
+    return Path(__file__).resolve().parents[2] / "account"
+
+
+def save_token_json_file(token_data: dict, output_dir: str | Path | None = None) -> Path:
+    email = str(token_data.get("email", "") or "").strip()
+    if not email:
+        raise ValueError("token_data 缺少 email，无法生成导出文件")
+
+    target_dir = Path(output_dir) if output_dir else _default_token_output_dir()
+    target_dir.mkdir(parents=True, exist_ok=True)
+    output_path = target_dir / f"{email}.json"
+    output_path.write_text(
+        json.dumps(token_data, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    return output_path
 
 
 def upload_to_cpa(

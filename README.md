@@ -264,6 +264,8 @@ Vite 会把 `/api` 代理到本地后端 `http://localhost:8000`。
 ### 自动启动
 
 本地 Turnstile Solver 会在 FastAPI 后端启动时自动拉起。
+默认浏览器类型为 `chromium`；如需切换，可自行设置环境变量 `SOLVER_BROWSER_TYPE=camoufox`。
+如果默认端口 `8889` 被其他进程占用，后端会自动切换到附近的空闲端口，并通过 `/api/solver/status` 返回当前实际地址。
 
 默认地址：
 
@@ -280,7 +282,7 @@ http://localhost:8889
 
 ```bash
 conda activate any-auto-register
-python services/turnstile_solver/start.py --browser_type camoufox --port 8889
+python services/turnstile_solver/start.py --browser_type chromium --port 8889
 ```
 
 ### Solver 日志

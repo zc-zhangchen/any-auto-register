@@ -29,8 +29,20 @@ from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional
 
 import httpx
-from selectolax.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit
+
+try:
+    from selectolax.parser import HTMLParser
+except ModuleNotFoundError as exc:
+    _SELECTOLAX_IMPORT_ERROR = exc
+
+    class HTMLParser:  # type: ignore[override]
+        def __init__(self, *_args, **_kwargs):
+            raise ModuleNotFoundError(
+                "No module named 'selectolax'. Install it with "
+                "`pip install -r requirements.txt` or `pip install selectolax` "
+                "before using SMSToMe HTML parsing."
+            ) from _SELECTOLAX_IMPORT_ERROR
 
 try:
     from runtime_support import get_nonempty_str, load_yaml_config

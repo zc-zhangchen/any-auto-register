@@ -13,21 +13,29 @@ def sync_account(account) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
 
     if platform == "chatgpt":
+        from platforms.chatgpt.cpa_upload import (
+            generate_token_json,
+            save_token_json_file,
+            upload_to_cpa,
+        )
+
+        class _A:
+            pass
+
+        a = _A()
+        a.email = account.email
+        extra = account.extra or {}
+        a.access_token = extra.get("access_token") or account.token
+        a.refresh_token = extra.get("refresh_token", "")
+        a.id_token = extra.get("id_token", "")
+
+        token_data = generate_token_json(a)
+        token_path = save_token_json_file(token_data)
+        results.append({"name": "CPA File", "ok": True, "msg": f"已写入 {token_path}"})
+
         cpa_url = config_store.get("cpa_api_url", "")
         if cpa_url:
-            from platforms.chatgpt.cpa_upload import generate_token_json, upload_to_cpa
-
-            class _A:
-                pass
-
-            a = _A()
-            a.email = account.email
-            extra = account.extra or {}
-            a.access_token = extra.get("access_token") or account.token
-            a.refresh_token = extra.get("refresh_token", "")
-            a.id_token = extra.get("id_token", "")
-
-            ok, msg = upload_to_cpa(generate_token_json(a))
+            ok, msg = upload_to_cpa(token_data)
             results.append({"name": "CPA", "ok": ok, "msg": msg})
 
     elif platform == "grok":

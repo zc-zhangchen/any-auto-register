@@ -26,10 +26,12 @@ export default function Register() {
   const [form] = Form.useForm()
   const [task, setTask] = useState<any>(null)
   const [polling, setPolling] = useState(false)
+  const [solverInfo, setSolverInfo] = useState<any>(null)
 
   useEffect(() => {
-    apiFetch('/config').then((cfg) => {
+    Promise.all([apiFetch('/config'), apiFetch('/solver/status')]).then(([cfg, solver]) => {
       const currentPlatform = form.getFieldValue('platform') || 'trae'
+      setSolverInfo(solver)
       form.setFieldsValue({
         executor_type: normalizeExecutorForPlatform(currentPlatform, cfg.default_executor),
         captcha_solver: cfg.default_captcha_solver || 'yescaptcha',
@@ -61,6 +63,7 @@ export default function Register() {
         luckmail_api_key: cfg.luckmail_api_key || '',
         luckmail_email_type: cfg.luckmail_email_type || '',
         luckmail_domain: cfg.luckmail_domain || '',
+        solver_url: solver.url || 'http://localhost:8889',
       })
     })
   }, [form])
@@ -157,7 +160,7 @@ export default function Register() {
         mail_provider: 'moemail',
         count: 1,
         register_delay_seconds: 0,
-        solver_url: 'http://localhost:8889',
+        solver_url: '',
       }}>
         <Card title="基本配置" style={{ marginBottom: 16 }}>
           <Form.Item name="platform" label="平台" rules={[{ required: true }]}>
@@ -180,7 +183,7 @@ export default function Register() {
             <Select
               options={[
                 { value: 'yescaptcha', label: 'YesCaptcha' },
-                { value: 'local_solver', label: '本地 Solver (Camoufox)' },
+                { value: 'local_solver', label: '本地 Solver (Chromium 默认)' },
                 { value: 'manual', label: '手动' },
               ]}
             />
@@ -301,11 +304,19 @@ export default function Register() {
         {captchaSolver === 'local_solver' && (
           <Card title="本地 Solver 配置" style={{ marginBottom: 16 }}>
             <Form.Item name="solver_url" label="Solver URL">
-              <Input />
+              <Input placeholder={solverInfo?.url || 'http://localhost:8889'} />
             </Form.Item>
             <Text type="secondary" style={{ fontSize: 12 }}>
-              启动命令: python services/turnstile_solver/start.py --browser_type camoufox --port 8889
+              默认自动读取后端当前 Solver 地址；如需手动启动，命令为:
+              {' '}python services/turnstile_solver/start.py --browser_type chromium --port {solverInfo?.port || 8889}
             </Text>
+            {solverInfo?.using_fallback_port && (
+              <div style={{ marginTop: 8 }}>
+                <Text type="warning">
+                  检测到默认端口 {solverInfo.requested_port} 被占用，当前已切换到 {solverInfo.url}
+                </Text>
+              </div>
+            )}
           </Card>
         )}
 

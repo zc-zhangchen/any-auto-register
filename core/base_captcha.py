@@ -1,4 +1,5 @@
 """验证码解决器基类"""
+import os
 from abc import ABC, abstractmethod
 
 
@@ -55,9 +56,11 @@ class ManualCaptcha(BaseCaptcha):
 
 
 class LocalSolverCaptcha(BaseCaptcha):
-    """调用本地 api_solver 服务解 Turnstile（Camoufox/patchright）"""
+    """调用本地 api_solver 服务解 Turnstile。"""
 
-    def __init__(self, solver_url: str = "http://localhost:8889"):
+    def __init__(self, solver_url: str = ""):
+        if not solver_url:
+            solver_url = os.getenv("LOCAL_SOLVER_URL", "http://localhost:8889")
         self.solver_url = solver_url.rstrip("/")
 
     def solve_turnstile(self, page_url: str, site_key: str) -> str:
@@ -95,7 +98,7 @@ class LocalSolverCaptcha(BaseCaptcha):
         raise NotImplementedError
 
     @staticmethod
-    def start_solver(headless: bool = True, browser_type: str = "camoufox",
+    def start_solver(headless: bool = True, browser_type: str = "chromium",
                      port: int = 8889) -> None:
         """在后台线程启动本地 solver 服务"""
         import subprocess, sys, os

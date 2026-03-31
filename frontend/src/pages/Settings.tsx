@@ -30,7 +30,7 @@ const SELECT_FIELDS: Record<string, { label: string; value: string }[]> = {
   ],
   default_captcha_solver: [
     { label: 'YesCaptcha', value: 'yescaptcha' },
-    { label: '本地 Solver (Camoufox)', value: 'local_solver' },
+    { label: '本地 Solver (Chromium 默认)', value: 'local_solver' },
     { label: '手动', value: 'manual' },
   ],
 }
@@ -300,20 +300,20 @@ function ConfigSection({ section }: { section: SectionConfig }) {
 }
 
 function SolverStatus() {
-  const [running, setRunning] = useState<boolean | null>(null)
+  const [solver, setSolver] = useState<any>(null)
 
   const checkSolver = async () => {
     try {
       const d = await apiFetch('/solver/status')
-      setRunning(d.running)
+      setSolver(d)
     } catch {
-      setRunning(false)
+      setSolver({ running: false })
     }
   }
 
   const restartSolver = async () => {
     await apiFetch('/solver/restart', { method: 'POST' })
-    setRunning(null)
+    setSolver(null)
     setTimeout(checkSolver, 2000)
   }
 
@@ -335,21 +335,27 @@ function SolverStatus() {
         }}
       >
         <Space size={8}>
-          {running === null ? (
+          {solver === null ? (
             <SyncOutlined spin style={{ color: '#7a8ba3' }} />
-          ) : running ? (
+          ) : solver?.running ? (
             <CheckCircleOutlined style={{ color: '#10b981' }} />
           ) : (
             <CloseCircleOutlined style={{ color: '#ef4444' }} />
           )}
-          <span style={{ color: running ? '#10b981' : '#7a8ba3', fontWeight: 500 }}>
-            {running === null ? '检测中' : running ? '运行中' : '未运行'}
+          <span style={{ color: solver?.running ? '#10b981' : '#7a8ba3', fontWeight: 500 }}>
+            {solver === null ? '检测中' : solver?.running ? '运行中' : '未运行'}
           </span>
         </Space>
         <Button size="small" onClick={restartSolver}>
           重启 Solver
         </Button>
       </div>
+      {solver?.url && (
+        <div style={{ marginTop: 12, fontSize: 12, color: '#7a8ba3' }}>
+          当前地址: {solver.url} ｜ 浏览器: {solver.browser_type || 'chromium'}
+          {solver.using_fallback_port ? ` ｜ 默认端口 ${solver.requested_port} 被占用，已自动切换` : ''}
+        </div>
+      )}
     </Card>
   )
 }
