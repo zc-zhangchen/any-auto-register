@@ -103,7 +103,8 @@ class Scheduler:
                 with Session(engine) as s:
                     a = s.get(AccountModel, acc.id)
                     if a:
-                        a.status = acc.status if valid else AccountStatus.INVALID.value
+                        if acc.platform != "chatgpt":
+                            a.status = acc.status if valid else AccountStatus.INVALID.value
                         a.updated_at = datetime.now(timezone.utc)
                         s.add(a)
                         s.commit()

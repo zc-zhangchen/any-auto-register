@@ -10,6 +10,7 @@ import sys
 from typing import Optional
 
 from curl_cffi import requests as cffi_requests
+from core.proxy_utils import build_requests_proxy_config
 
 # from ..database.models import Account  # removed: external dep
 
@@ -20,9 +21,7 @@ TEAM_CHECKOUT_BASE_URL = "https://chatgpt.com/checkout/openai_llc/"
 
 
 def _build_proxies(proxy: Optional[str]) -> Optional[dict]:
-    if proxy:
-        return {"http": proxy, "https": proxy}
-    return None
+    return build_requests_proxy_config(proxy)
 
 
 _COUNTRY_CURRENCY_MAP = {
@@ -46,7 +45,7 @@ def _extract_oai_did(cookies_str: str) -> Optional[str]:
     for part in cookies_str.split(";"):
         part = part.strip()
         if part.startswith("oai-did="):
-            return part[len("oai-did="):].strip()
+            return part[len("oai-did=") :].strip()
     return None
 
 
@@ -58,12 +57,14 @@ def _parse_cookie_str(cookies_str: str, domain: str) -> list:
         if "=" not in part:
             continue
         name, _, value = part.partition("=")
-        cookies.append({
-            "name": name.strip(),
-            "value": value.strip(),
-            "domain": domain,
-            "path": "/",
-        })
+        cookies.append(
+            {
+                "name": name.strip(),
+                "value": value.strip(),
+                "domain": domain,
+                "path": "/",
+            }
+        )
     return cookies
 
 
@@ -79,7 +80,9 @@ def _open_url_system_browser(url: str) -> bool:
                 except Exception:
                     continue
         elif platform == "darwin":
-            subprocess.Popen(["open", "-a", "Google Chrome", "--args", "--incognito", url])
+            subprocess.Popen(
+                ["open", "-a", "Google Chrome", "--args", "--incognito", url]
+            )
             return True
         else:
             for binary in ["google-chrome", "chromium-browser", "chromium"]:
@@ -197,6 +200,7 @@ def generate_team_link(
 def open_url_incognito(url: str, cookies_str: Optional[str] = None) -> bool:
     """用 Playwright 以无痕模式打开 URL，可注入 cookie"""
     import threading
+
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:

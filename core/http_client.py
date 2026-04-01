@@ -1,4 +1,5 @@
 """通用 HTTP 客户端 - 基于 curl_cffi，支持代理、重试、会话管理"""
+
 """
 HTTP 客户端封装
 基于 curl_cffi 的 HTTP 请求封装，支持代理和错误处理
@@ -12,9 +13,7 @@ import logging
 
 from curl_cffi import requests as cffi_requests
 from curl_cffi.requests import Session, Response
-
-
-
+from .proxy_utils import build_requests_proxy_config
 
 
 logger = logging.getLogger(__name__)
@@ -23,6 +22,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class RequestConfig:
     """HTTP 请求配置"""
+
     timeout: int = 30
     max_retries: int = 3
     retry_delay: float = 1.0
@@ -33,6 +33,7 @@ class RequestConfig:
 
 class HTTPClientError(Exception):
     """HTTP 客户端异常"""
+
     pass
 
 
@@ -46,7 +47,7 @@ class HTTPClient:
         self,
         proxy_url: Optional[str] = None,
         config: Optional[RequestConfig] = None,
-        session: Optional[Session] = None
+        session: Optional[Session] = None,
     ):
         """
         初始化 HTTP 客户端
@@ -63,12 +64,7 @@ class HTTPClient:
     @property
     def proxies(self) -> Optional[Dict[str, str]]:
         """获取代理配置"""
-        if not self.proxy_url:
-            return None
-        return {
-            "http": self.proxy_url,
-            "https": self.proxy_url,
-        }
+        return build_requests_proxy_config(self.proxy_url)
 
     @property
     def session(self) -> Session:
@@ -78,16 +74,11 @@ class HTTPClient:
                 proxies=self.proxies,
                 impersonate=self.config.impersonate,
                 verify=self.config.verify_ssl,
-                timeout=self.config.timeout
+                timeout=self.config.timeout,
             )
         return self._session
 
-    def request(
-        self,
-        method: str,
-        url: str,
-        **kwargs
-    ) -> Response:
+    def request(self, method: str, url: str, **kwargs) -> Response:
         """
         发送 HTTP 请求
 
@@ -123,7 +114,10 @@ class HTTPClient:
                     )
 
                     # 如果是服务器错误，重试
-                    if response.status_code >= 500 and attempt < self.config.max_retries - 1:
+                    if (
+                        response.status_code >= 500
+                        and attempt < self.config.max_retries - 1
+                    ):
                         time.sleep(self.config.retry_delay * (attempt + 1))
                         continue
 
@@ -188,7 +182,7 @@ class HTTPClient:
             response = self.get(url, stream=True)
             response.raise_for_status()
 
-            with open(filepath, 'wb') as f:
+            with open(filepath, "wb") as f:
                 for chunk in response.iter_content(chunk_size=chunk_size):
                     if chunk:
                         f.write(chunk)

@@ -1,6 +1,8 @@
 """纯协议执行器 - 基于 curl_cffi"""
+
 from curl_cffi import requests as curl_requests
 from ..base_executor import BaseExecutor, Response
+from ..proxy_utils import build_requests_proxy_config
 
 
 class ProtocolExecutor(BaseExecutor):
@@ -9,12 +11,16 @@ class ProtocolExecutor(BaseExecutor):
         self.s = curl_requests.Session()
         self.s.impersonate = impersonate
         if proxy:
-            self.s.proxies = {"http": proxy, "https": proxy}
-        self.s.headers.update({
-            "user-agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                           "AppleWebKit/537.36 (KHTML, like Gecko) "
-                           "Chrome/124.0.0.0 Safari/537.36")
-        })
+            self.s.proxies = build_requests_proxy_config(proxy)
+        self.s.headers.update(
+            {
+                "user-agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
+                )
+            }
+        )
 
     def _wrap(self, r) -> Response:
         cookies = {c.name: c.value for c in self.s.cookies.jar}

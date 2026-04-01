@@ -15,6 +15,7 @@ import {
   Dropdown,
   Typography,
   Alert,
+  theme,
 } from 'antd'
 import type { MenuProps } from 'antd'
 import {
@@ -26,8 +27,9 @@ import {
   UploadOutlined,
   MoreOutlined,
   DeleteOutlined,
+  SyncOutlined,
 } from '@ant-design/icons'
-import { apiFetch, API_BASE } from '@/lib/utils'
+import { apiFetch, API_BASE, getToken } from '@/lib/utils'
 import { normalizeExecutorForPlatform } from '@/lib/registerOptions'
 
 const { Text } = Typography
@@ -53,8 +55,9 @@ function parseExtraJson(raw: string | undefined) {
 function normalizeAccount(account: any) {
   const extra = parseExtraJson(account.extra_json)
   const syncStatuses = extra.sync_statuses && typeof extra.sync_statuses === 'object' ? extra.sync_statuses : {}
-  const cpaSync = syncStatuses.cpa && typeof syncStatuses.cpa === 'object' ? syncStatuses.cpa : {}
-  return { ...account, extra, cpaSync }
+  const cliproxySync = syncStatuses.cliproxyapi && typeof syncStatuses.cliproxyapi === 'object' ? syncStatuses.cliproxyapi : {}
+  const chatgptLocal = extra.chatgpt_local && typeof extra.chatgpt_local === 'object' ? extra.chatgpt_local : {}
+  return { ...account, extra, cliproxySync, chatgptLocal }
 }
 
 function formatSyncTime(value?: string) {
@@ -63,10 +66,264 @@ function formatSyncTime(value?: string) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 
+function formatCreatedAt(value?: string) {
+  if (!value) return { date: '-', time: '' }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return { date: value, time: '' }
+  }
+  return {
+    date: date.toLocaleDateString(),
+    time: date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+  }
+}
+
+function authStateMeta(state?: string) {
+  switch (state) {
+    case 'access_token_valid':
+      return { color: 'success', label: 'AT有效' }
+    case 'account_deactivated':
+      return { color: 'error', label: '已失效' }
+    case 'access_token_invalidated':
+      return { color: 'error', label: 'AT失效' }
+    case 'unauthorized':
+      return { color: 'error', label: '未授权' }
+    case 'missing_access_token':
+      return { color: 'default', label: '缺少AT' }
+    case 'banned_like':
+      return { color: 'error', label: '疑似封禁' }
+    case 'probe_failed':
+      return { color: 'warning', label: '探测失败' }
+    default:
+      return { color: 'default', label: '未探测' }
+  }
+}
+
+function codexStateMeta(state?: string) {
+  switch (state) {
+    case 'usable':
+      return { color: 'success', label: '可用' }
+    case 'account_deactivated':
+      return { color: 'error', label: '已失效' }
+    case 'access_token_invalidated':
+      return { color: 'error', label: 'AT失效' }
+    case 'unauthorized':
+      return { color: 'error', label: '未授权' }
+    case 'payment_required':
+      return { color: 'warning', label: '需付费/权限' }
+    case 'quota_exhausted':
+      return { color: 'warning', label: '额度耗尽' }
+    case 'skipped_auth_invalid':
+      return { color: 'default', label: '未测' }
+    case 'probe_failed':
+      return { color: 'warning', label: '探测失败' }
+    default:
+      return { color: 'default', label: '未探测' }
+  }
+}
+
+function planMeta(plan?: string) {
+  switch ((plan || '').toLowerCase()) {
+    case 'plus':
+      return { color: 'success', label: 'Plus' }
+    case 'team':
+      return { color: 'processing', label: 'Team' }
+    case 'enterprise':
+      return { color: 'processing', label: 'Enterprise' }
+    case 'pro':
+      return { color: 'processing', label: 'Pro' }
+    case 'free':
+      return { color: 'default', label: 'Free' }
+    default:
+      return { color: 'default', label: '未知' }
+  }
+}
+
+function formatStructuredText(value?: string) {
+  if (!value) return ''
+  const trimmed = String(value).trim()
+  if (!trimmed) return ''
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    try {
+      return JSON.stringify(JSON.parse(trimmed), null, 2)
+    } catch {
+      return trimmed
+    }
+  }
+  return trimmed
+}
+
+function SummaryField({
+  label,
+  value,
+  code = false,
+}: {
+  label: string
+  value?: string
+  code?: boolean
+}) {
+  const { token } = theme.useToken()
+  if (!value) return null
+
+  const content = code ? formatStructuredText(value) : value
+  const isBlock = code || content.length > 96 || content.includes('\n')
+
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '104px minmax(0, 1fr)',
+        gap: 12,
+        alignItems: 'start',
+      }}
+    >
+      <Text type="secondary" style={{ fontSize: 12, lineHeight: '20px' }}>
+        {label}
+      </Text>
+      {isBlock ? (
+        <pre
+          style={{
+            margin: 0,
+            padding: code ? '8px 10px' : 0,
+            borderRadius: code ? token.borderRadius : 0,
+            border: code ? `1px solid ${token.colorBorder}` : 'none',
+            background: code ? token.colorBgElevated : 'transparent',
+            color: code ? token.colorText : token.colorTextSecondary,
+            fontFamily: code ? 'SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace' : 'inherit',
+            fontSize: 12,
+            lineHeight: 1.6,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+            overflowWrap: 'anywhere',
+            maxHeight: code ? 160 : 'none',
+            overflow: code ? 'auto' : 'visible',
+          }}
+        >
+          {content}
+        </pre>
+      ) : (
+        <Text style={{ display: 'block', color: token.colorTextSecondary, lineHeight: '20px' }}>
+          {content}
+        </Text>
+      )}
+    </div>
+  )
+}
+
+function DetailSection({ title, children }: { title: string; children: React.ReactNode }) {
+  const { token } = theme.useToken()
+
+  return (
+    <div
+      style={{
+        marginTop: 16,
+        padding: 14,
+        borderRadius: token.borderRadiusLG,
+        border: `1px solid ${token.colorBorder}`,
+        background: token.colorFillAlter,
+      }}
+    >
+      <div style={{ marginBottom: 10, fontWeight: 600, color: token.colorText }}>{title}</div>
+      {children}
+    </div>
+  )
+}
+
+function LocalProbeSummary({ probe }: { probe: any }) {
+  const checkedAt = probe?.checked_at || probe?.auth?.checked_at || probe?.subscription?.checked_at || probe?.codex?.checked_at
+  const auth = probe?.auth || {}
+  const subscription = probe?.subscription || {}
+  const codex = probe?.codex || {}
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        <Tag color={authStateMeta(auth.state).color}>认证: {authStateMeta(auth.state).label}</Tag>
+        <Tag color={planMeta(subscription.plan).color}>订阅: {planMeta(subscription.plan).label}</Tag>
+        <Tag color={codexStateMeta(codex.state).color}>Codex: {codexStateMeta(codex.state).label}</Tag>
+      </div>
+      <SummaryField label="探测时间" value={checkedAt ? formatSyncTime(checkedAt) : ''} />
+      <SummaryField label="认证信息" value={auth.message} code />
+      <SummaryField label="工作区套餐" value={subscription.workspace_plan_type} />
+      <SummaryField label="Codex 信息" value={codex.message} code />
+    </div>
+  )
+}
+
+function cliproxyStateMeta(sync: any) {
+  if (!sync || Object.keys(sync).length === 0) {
+    return { color: 'default', label: '未同步' }
+  }
+  if (sync.remote_state === 'unreachable') {
+    return { color: 'error', label: '不可连接' }
+  }
+  if (sync.remote_state === 'not_found') {
+    return { color: 'default', label: '远端未发现' }
+  }
+  if (!sync.uploaded) {
+    return { color: 'default', label: '未发现' }
+  }
+  if (sync.remote_state === 'usable') {
+    return { color: 'success', label: '远端可用' }
+  }
+  if (sync.remote_state === 'account_deactivated') {
+    return { color: 'error', label: '远端已失效' }
+  }
+  if (sync.remote_state === 'access_token_invalidated') {
+    return { color: 'error', label: '远端AT失效' }
+  }
+  if (sync.remote_state === 'unauthorized') {
+    return { color: 'error', label: '远端未授权' }
+  }
+  if (sync.remote_state === 'payment_required') {
+    return { color: 'warning', label: '远端需付费/权限' }
+  }
+  if (sync.remote_state === 'quota_exhausted') {
+    return { color: 'warning', label: '远端额度耗尽' }
+  }
+  if (sync.status === 'active') {
+    return { color: 'processing', label: '远端Active' }
+  }
+  if (sync.status === 'refreshing') {
+    return { color: 'processing', label: '远端刷新中' }
+  }
+  if (sync.status === 'pending') {
+    return { color: 'default', label: '远端待处理' }
+  }
+  if (sync.status === 'error') {
+    return { color: 'error', label: '远端错误' }
+  }
+  if (sync.status === 'disabled') {
+    return { color: 'default', label: '远端禁用' }
+  }
+  return { color: 'default', label: '未同步' }
+}
+
+function CliproxySyncSummary({ sync }: { sync: any }) {
+  const meta = cliproxyStateMeta(sync)
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        <Tag color={meta.color}>{meta.label}</Tag>
+        {sync?.status ? <Tag>{`status: ${sync.status}`}</Tag> : null}
+      </div>
+      <SummaryField label="状态信息" value={sync?.status_message} code />
+      <SummaryField label="auth-file" value={sync?.name} />
+      <SummaryField label="API URL" value={sync?.base_url} />
+      <SummaryField label="同步时间" value={sync?.last_synced_at ? formatSyncTime(sync.last_synced_at) : ''} />
+      <SummaryField label="远端刷新时间" value={sync?.last_refresh ? formatSyncTime(sync.last_refresh) : ''} />
+      <SummaryField label="下次重试时间" value={sync?.next_retry_after ? formatSyncTime(sync.next_retry_after) : ''} />
+      <SummaryField label="探测信息" value={sync?.last_probe_message} code />
+    </div>
+  )
+}
+
 function LogPanel({ taskId, onDone }: { taskId: string; onDone: () => void }) {
   const [lines, setLines] = useState<string[]>([])
   const [done, setDone] = useState(false)
+  const [error, setError] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
+  const nextSinceRef = useRef(0)
   const handleCopyAll = async () => {
     try {
       await navigator.clipboard.writeText(lines.join('\n'))
@@ -78,18 +335,98 @@ function LogPanel({ taskId, onDone }: { taskId: string; onDone: () => void }) {
 
   useEffect(() => {
     if (!taskId) return
-    const es = new EventSource(`${API_BASE}/tasks/${taskId}/logs/stream`)
-    es.onmessage = (e) => {
-      const d = JSON.parse(e.data)
-      if (d.line) setLines((prev) => [...prev, d.line])
-      if (d.done) {
-        setDone(true)
-        es.close()
-        onDone()
+    const controller = new AbortController()
+    let cancelled = false
+    const BASE_RETRY_MS = 1000
+    const MAX_RETRY_MS = 8000
+    nextSinceRef.current = 0
+    setLines([])
+
+    const sleep = async (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+    const connectStreamOnce = async (): Promise<boolean> => {
+      try {
+        const token = getToken()
+        const headers: Record<string, string> = {}
+        if (token) headers['Authorization'] = `Bearer ${token}`
+
+        const since = nextSinceRef.current
+        const res = await fetch(`${API_BASE}/tasks/${taskId}/logs/stream?since=${since}`, {
+          headers,
+          signal: controller.signal,
+        })
+        if (!res.ok) {
+          setError(`日志流连接失败 (${res.status})`)
+          return true
+        }
+
+        if (!res.body) {
+          setError('日志流未返回可读数据')
+          return false
+        }
+
+        setError('')
+        const reader = res.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+
+        while (!cancelled) {
+          const { done: readerDone, value } = await reader.read()
+          if (readerDone) break
+
+          buffer += decoder.decode(value, { stream: true })
+          const parts = buffer.split('\n\n')
+          buffer = parts.pop() || ''
+
+          for (const part of parts) {
+            const match = part.match(/^data:\s*(.+)$/m)
+            if (!match) continue
+            try {
+              const d = JSON.parse(match[1])
+              if (d.line) {
+                nextSinceRef.current += 1
+                setLines((prev) => [...prev, d.line])
+              }
+              if (d.done) {
+                setDone(true)
+                onDone()
+                return true
+              }
+            } catch {
+              // SSE 帧解析异常，跳过
+            }
+          }
+        }
+        return false
+      } catch (e: any) {
+        if (!cancelled && e.name !== 'AbortError') {
+          return false
+        }
+        return true
       }
     }
-    es.onerror = () => es.close()
-    return () => es.close()
+
+    const connectStream = async () => {
+      setDone(false)
+      setError('')
+      let retryCount = 0
+
+      while (!cancelled) {
+        const shouldStop = await connectStreamOnce()
+        if (shouldStop || cancelled) return
+
+        retryCount += 1
+        const retryMs = Math.min(BASE_RETRY_MS * (2 ** (retryCount - 1)), MAX_RETRY_MS)
+        setError(`日志流连接中断，${retryMs / 1000}s 后重试（第 ${retryCount} 次）`)
+        await sleep(retryMs)
+      }
+    }
+
+    connectStream()
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
   }, [taskId])
 
   useEffect(() => {
@@ -122,7 +459,8 @@ function LogPanel({ taskId, onDone }: { taskId: string; onDone: () => void }) {
           whiteSpace: 'pre-wrap',
         }}
       >
-        {lines.length === 0 && <div style={{ color: '#9ca3af' }}>等待日志...</div>}
+        {lines.length === 0 && !error && <div style={{ color: '#9ca3af' }}>等待日志...</div>}
+        {error && <div style={{ color: '#dc2626' }}>{error}</div>}
         {lines.map((l, i) => (
           <div
             key={i}
@@ -141,25 +479,22 @@ function LogPanel({ taskId, onDone }: { taskId: string; onDone: () => void }) {
   )
 }
 
-function ActionMenu({ acc, onRefresh }: { acc: any; onRefresh: () => void }) {
-  const [actions, setActions] = useState<any[]>([])
+function ActionMenu({ acc, onRefresh, actions }: { acc: any; onRefresh: () => void; actions: any[] }) {
   const [resultOpen, setResultOpen] = useState(false)
   const [resultTitle, setResultTitle] = useState('')
   const [resultStatus, setResultStatus] = useState<'success' | 'error'>('success')
   const [resultText, setResultText] = useState('')
   const [resultUrl, setResultUrl] = useState('')
+  const [resultProbe, setResultProbe] = useState<any>(null)
+  const [resultCliproxySync, setResultCliproxySync] = useState<any>(null)
 
-  useEffect(() => {
-    apiFetch(`/actions/${acc.platform}`)
-      .then((d) => setActions(d.actions || []))
-      .catch(() => {})
-  }, [acc.platform])
-
-  const showResult = (title: string, status: 'success' | 'error', text: string, url = '') => {
+  const showResult = (title: string, status: 'success' | 'error', text: string, url = '', probe: any = null, cliproxySync: any = null) => {
     setResultTitle(title)
     setResultStatus(status)
     setResultText(text)
     setResultUrl(url)
+    setResultProbe(probe)
+    setResultCliproxySync(cliproxySync)
     setResultOpen(true)
   }
 
@@ -182,7 +517,11 @@ function ActionMenu({ acc, onRefresh }: { acc: any; onRefresh: () => void }) {
         body: JSON.stringify({ params: {} }),
       })
       if (!r.ok) {
-        showResult(actionLabel, 'error', r.error || '操作失败')
+        const data = r.data || {}
+        const probe = typeof data === 'object' && data ? data.probe || null : null
+        const cliproxySync = typeof data === 'object' && data ? data.sync || null : null
+        showResult(actionLabel, 'error', r.error || data.message || '操作失败', '', probe, cliproxySync)
+        onRefresh()
         return
       }
       const data = r.data || {}
@@ -192,13 +531,19 @@ function ActionMenu({ acc, onRefresh }: { acc: any; onRefresh: () => void }) {
         showResult(actionLabel, 'success', '操作成功，请在弹窗中打开或复制链接。', targetUrl)
       } else {
         message.success(data.message || '操作成功')
+        const probe = typeof data === 'object' && data ? data.probe || null : null
+        const cliproxySync = typeof data === 'object' && data ? data.sync || null : null
         const text =
-          typeof data === 'string'
+          probe
+            ? String(data.message || '操作成功')
+            : cliproxySync
+            ? String(data.message || '操作成功')
+            : typeof data === 'string'
             ? data
             : Object.keys(data).length > 0
               ? JSON.stringify(data, null, 2)
               : '操作成功'
-        showResult(actionLabel, 'success', text)
+        showResult(actionLabel, 'success', text, '', probe, cliproxySync)
       }
       onRefresh()
     } catch (e: any) {
@@ -256,6 +601,16 @@ function ActionMenu({ acc, onRefresh }: { acc: any; onRefresh: () => void }) {
           message={resultStatus === 'success' ? '操作完成' : '操作失败'}
           style={{ marginBottom: 12 }}
         />
+        {resultProbe ? (
+          <div style={{ marginBottom: 12 }}>
+            <LocalProbeSummary probe={resultProbe} />
+          </div>
+        ) : null}
+        {resultCliproxySync ? (
+          <div style={{ marginBottom: 12 }}>
+            <CliproxySyncSummary sync={resultCliproxySync} />
+          </div>
+        ) : null}
         {resultUrl ? (
           <Space direction="vertical" style={{ width: '100%' }}>
             <Text copyable={{ text: resultUrl }} style={{ wordBreak: 'break-all' }}>
@@ -283,8 +638,10 @@ function ActionMenu({ acc, onRefresh }: { acc: any; onRefresh: () => void }) {
 
 export default function Accounts() {
   const { platform } = useParams<{ platform: string }>()
+  const { token } = theme.useToken()
   const [currentPlatform, setCurrentPlatform] = useState(platform || 'trae')
   const [accounts, setAccounts] = useState<any[]>([])
+  const [platformActions, setPlatformActions] = useState<any[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
@@ -305,10 +662,19 @@ export default function Accounts() {
   const [taskId, setTaskId] = useState<string | null>(null)
   const [registerLoading, setRegisterLoading] = useState(false)
   const [cpaSyncLoading, setCpaSyncLoading] = useState<'pending' | 'selected' | ''>('')
+  const [statusSyncLoading, setStatusSyncLoading] = useState<'probe_selected' | 'probe_all' | 'remote_selected' | 'remote_all' | ''>('')
 
   useEffect(() => {
     if (platform) setCurrentPlatform(platform)
   }, [platform])
+
+  useEffect(() => {
+    if (!detailModalOpen || !currentAccount) return
+    detailForm.setFieldsValue({
+      status: currentAccount.status,
+      token: currentAccount.token,
+    })
+  }, [detailModalOpen, currentAccount, detailForm])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -327,6 +693,12 @@ export default function Accounts() {
   useEffect(() => {
     load()
   }, [load])
+
+  useEffect(() => {
+    apiFetch(`/actions/${currentPlatform}`)
+      .then((data) => setPlatformActions(data.actions || []))
+      .catch(() => setPlatformActions([]))
+  }, [currentPlatform])
 
   const copyText = (text: string) => {
     navigator.clipboard.writeText(text)
@@ -513,6 +885,37 @@ export default function Accounts() {
     })
   }
 
+  const showBatchActionResult = (title: string, result: any) => {
+    const lines = (result.items || [])
+      .filter((item: any) => !item.ok)
+      .map((item: any) => `[${item.id || '-'}] ${item.email || '-'}: ${item.message || '失败'}`)
+
+    if (lines.length === 0) return
+
+    Modal.info({
+      title,
+      width: 760,
+      content: (
+        <pre
+          style={{
+            margin: 0,
+            maxHeight: 360,
+            overflow: 'auto',
+            padding: 12,
+            borderRadius: 8,
+            background: 'rgba(127,127,127,0.08)',
+            fontSize: 12,
+            lineHeight: 1.5,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+          }}
+        >
+          {lines.join('\n')}
+        </pre>
+      ),
+    })
+  }
+
   const handleCpaBackfill = async (mode: 'pending' | 'selected') => {
     if (currentPlatform !== 'chatgpt') return
 
@@ -543,15 +946,17 @@ export default function Accounts() {
         body: JSON.stringify(body),
       })
 
-      const actionLabel = mode === 'selected' ? '所选账号 CPA 上传' : '未上传账号 CPA 补传'
+      const actionLabel = mode === 'selected' ? '所选账号远端补传' : '远端未发现账号补传'
       if (!result.total) {
         message.info('没有可处理的账号')
-      } else if (!result.failed) {
+      } else if (!result.failed && !result.skipped) {
         message.success(`${actionLabel}完成：成功 ${result.success} / ${result.total}`)
+      } else if (!result.failed) {
+        message.success(`${actionLabel}完成：成功 ${result.success}，跳过 ${result.skipped} / ${result.total}`)
       } else if (!result.success) {
-        message.error(`${actionLabel}失败：成功 ${result.success} / ${result.total}`)
+        message.error(`${actionLabel}失败：成功 ${result.success}，跳过 ${result.skipped} / ${result.total}`)
       } else {
-        message.warning(`${actionLabel}部分完成：成功 ${result.success} / ${result.total}`)
+        message.warning(`${actionLabel}部分完成：成功 ${result.success}，跳过 ${result.skipped} / ${result.total}`)
       }
 
       showCpaSyncResult(`${actionLabel}结果`, result)
@@ -563,24 +968,136 @@ export default function Accounts() {
     }
   }
 
+  const handleBatchStatusSync = async (kind: 'probe' | 'remote', scope: 'selected' | 'all') => {
+    if (currentPlatform !== 'chatgpt') return
+
+    const loadingKey = `${kind}_${scope}` as typeof statusSyncLoading
+    const actionId = kind === 'probe' ? 'probe_local_status' : 'sync_cliproxyapi_status'
+    const actionLabel = kind === 'probe' ? '本地状态同步' : 'CLIProxyAPI 状态同步'
+    const scopeLabel = scope === 'selected' ? '所选账号' : '当前筛选账号'
+    const toastKey = `status-sync:${loadingKey}`
+
+    const body: Record<string, unknown> = {
+      params: {},
+    }
+
+    if (scope === 'selected') {
+      const accountIds = Array.from(selectedRowKeys)
+        .map((value) => Number(value))
+        .filter((value) => Number.isInteger(value) && value > 0)
+
+      if (accountIds.length === 0) {
+        message.warning('请先选择要同步的账号')
+        return
+      }
+      body.account_ids = accountIds
+    } else {
+      body.all_filtered = true
+      if (search) body.email = search
+      if (filterStatus) body.status = filterStatus
+    }
+
+    setStatusSyncLoading(loadingKey)
+    message.loading({ content: `${scopeLabel}${actionLabel}进行中...`, key: toastKey, duration: 0 })
+    try {
+      const result = await apiFetch(`/actions/${currentPlatform}/${actionId}/batch`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      })
+
+      if (!result.total) {
+        message.info({ content: '没有可处理的账号', key: toastKey })
+      } else if (!result.failed) {
+        message.success({ content: `${scopeLabel}${actionLabel}完成：成功 ${result.success} / ${result.total}`, key: toastKey })
+      } else if (!result.success) {
+        message.error({ content: `${scopeLabel}${actionLabel}失败：成功 ${result.success} / ${result.total}`, key: toastKey })
+      } else {
+        message.warning({ content: `${scopeLabel}${actionLabel}部分完成：成功 ${result.success} / ${result.total}`, key: toastKey })
+      }
+
+      showBatchActionResult(`${scopeLabel}${actionLabel}结果`, result)
+      await load()
+    } catch (e: any) {
+      message.error({ content: `${actionLabel}失败: ${e.message}`, key: toastKey })
+    } finally {
+      setStatusSyncLoading('')
+    }
+  }
+
+  const getStatusSyncScope = (): 'selected' | 'all' => (selectedRowKeys.length > 0 ? 'selected' : 'all')
+
+  const getBackfillScope = (): 'selected' | 'pending' => (selectedRowKeys.length > 0 ? 'selected' : 'pending')
+
+  const backfillButtonLabel = () => {
+    const scope = getBackfillScope()
+    const count = scope === 'selected' ? selectedRowKeys.length : total
+    return scope === 'selected' ? `补传所选远端未发现 (${count})` : `补传远端未发现 (${count})`
+  }
+
+  const isChatgptPlatform = currentPlatform === 'chatgpt'
+  const monospaceStyle: React.CSSProperties = {
+    fontFamily: 'SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+    fontSize: 12,
+  }
+  const secondaryTextStyle: React.CSSProperties = {
+    fontSize: 12,
+    color: token.colorTextSecondary,
+  }
+  const cellStackStyle: React.CSSProperties = {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 6,
+    minWidth: 0,
+  }
+  const secretPreviewStyle: React.CSSProperties = {
+    ...monospaceStyle,
+    filter: 'blur(4px)',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    maxWidth: '100%',
+    opacity: 0.9,
+  }
+  const compactPanelStyle: React.CSSProperties = {
+    padding: '8px 10px',
+    borderRadius: token.borderRadiusLG,
+    border: `1px solid ${token.colorBorder}`,
+    background: token.colorFillAlter,
+  }
+
   const columns: any[] = [
     {
       title: '邮箱',
       dataIndex: 'email',
       key: 'email',
-      render: (text: string) => (
-        <Text copyable={{ text }} style={{ fontFamily: 'monospace', fontSize: 12 }}>
-          {text}
-        </Text>
+      width: 260,
+      render: (text: string, record: any) => (
+        <div style={cellStackStyle}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+            <Text
+              style={{ ...monospaceStyle, flex: 1, minWidth: 0, whiteSpace: 'nowrap' }}
+              ellipsis={{ tooltip: text }}
+            >
+              {text}
+            </Text>
+            <Button type="text" size="small" icon={<CopyOutlined />} onClick={() => copyText(text)} />
+          </div>
+          <Text type="secondary" style={secondaryTextStyle} ellipsis={{ tooltip: record.user_id || `账号 #${record.id}` }}>
+            {record.user_id ? `UID: ${record.user_id}` : `账号 #${record.id}`}
+          </Text>
+        </div>
       ),
     },
     {
       title: '密码',
       dataIndex: 'password',
       key: 'password',
+      width: 150,
       render: (text: string) => (
-        <Space>
-          <Text style={{ fontFamily: 'monospace', fontSize: 12, filter: 'blur(4px)' }}>{text}</Text>
+        <Space size={6} style={{ width: '100%', justifyContent: 'space-between' }}>
+          <Text style={{ ...secretPreviewStyle, maxWidth: 90 }} title={text}>
+            {text}
+          </Text>
           <Button type="text" size="small" icon={<CopyOutlined />} onClick={() => copyText(text)} />
         </Space>
       ),
@@ -588,13 +1105,14 @@ export default function Accounts() {
     {
       title: 'RT',
       key: 'refresh_token',
+      width: 120,
       render: (_: any, record: any) => {
         const rt = getRefreshToken(record)
         if (!rt) return <span style={{ color: '#ccc' }}>-</span>
         return (
-          <Space>
-            <Text style={{ fontFamily: 'monospace', fontSize: 11, filter: 'blur(4px)', maxWidth: 80, overflow: 'hidden', display: 'inline-block', verticalAlign: 'middle' }}>
-              {rt.slice(0, 16)}
+          <Space size={6} style={{ width: '100%', justifyContent: 'space-between' }}>
+            <Text style={{ ...secretPreviewStyle, fontSize: 11, maxWidth: 58 }} title={rt}>
+              {rt}
             </Text>
             <Button type="text" size="small" icon={<CopyOutlined />} onClick={() => copyText(rt)} />
           </Space>
@@ -605,39 +1123,102 @@ export default function Accounts() {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
+      width: 110,
       render: (status: string) => <Tag color={STATUS_COLORS[status] || 'default'}>{status}</Tag>,
     },
-    {
-      title: '地区',
-      dataIndex: 'region',
-      key: 'region',
-      render: (text: string) => text || '-',
-    },
-    {
-      title: '试用链接',
-      dataIndex: 'cashier_url',
-      key: 'cashier_url',
-      render: (url: string) =>
-        url ? (
-          <Space>
-            <Button type="text" size="small" icon={<CopyOutlined />} onClick={() => copyText(url)} />
-            <Button type="text" size="small" icon={<LinkOutlined />} onClick={() => window.open(url, '_blank')} />
-          </Space>
-        ) : (
-          '-'
-        ),
-    },
+  ]
+
+  if (isChatgptPlatform) {
+    columns.push(
+      {
+        title: '本地状态',
+        key: 'chatgpt_local_state',
+        width: 220,
+        render: (_: any, record: any) => {
+          const auth = record.chatgptLocal?.auth || {}
+          const subscription = record.chatgptLocal?.subscription || {}
+          const codex = record.chatgptLocal?.codex || {}
+          const authMeta = authStateMeta(auth.state)
+          const planTag = planMeta(subscription.plan)
+          const codexMeta = codexStateMeta(codex.state)
+
+          return (
+            <div style={{ ...cellStackStyle, ...compactPanelStyle }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                <Tag color={authMeta.color}>{authMeta.label}</Tag>
+                <Tag color={planTag.color}>{planTag.label}</Tag>
+                <Tag color={codexMeta.color}>Codex {codexMeta.label}</Tag>
+              </div>
+            </div>
+          )
+        },
+      },
+      {
+        title: 'CLIProxyAPI',
+        key: 'cliproxy_sync',
+        width: 170,
+        render: (_: any, record: any) => {
+          const sync = record.cliproxySync || {}
+          const meta = cliproxyStateMeta(sync)
+
+          return (
+            <div style={{ ...cellStackStyle, ...compactPanelStyle }}>
+              <Tag color={meta.color}>{meta.label}</Tag>
+            </div>
+          )
+        },
+      },
+    )
+  } else {
+    columns.push(
+      {
+        title: '地区',
+        dataIndex: 'region',
+        key: 'region',
+        width: 100,
+        render: (text: string) => text || '-',
+      },
+      {
+        title: '试用链接',
+        dataIndex: 'cashier_url',
+        key: 'cashier_url',
+        width: 120,
+        render: (url: string) =>
+          url ? (
+            <Space size={0}>
+              <Button type="text" size="small" icon={<CopyOutlined />} onClick={() => copyText(url)} />
+              <Button type="text" size="small" icon={<LinkOutlined />} onClick={() => window.open(url, '_blank')} />
+            </Space>
+          ) : (
+            '-'
+          ),
+      },
+    )
+  }
+
+  columns.push(
     {
       title: '注册时间',
       dataIndex: 'created_at',
       key: 'created_at',
-      render: (text: string) => (text ? new Date(text).toLocaleDateString() : '-'),
+      width: 132,
+      render: (text: string) => {
+        const formatted = formatCreatedAt(text)
+        return (
+          <div style={cellStackStyle}>
+            <Text style={{ fontSize: 13 }}>{formatted.date}</Text>
+            {formatted.time ? <Text type="secondary" style={secondaryTextStyle}>{formatted.time}</Text> : null}
+          </div>
+        )
+      },
     },
     {
       title: '操作',
       key: 'action',
+      width: 150,
+      fixed: isChatgptPlatform ? 'right' : undefined,
       render: (_: any, record: any) => (
-        <Space>
+        <Space size={4} wrap>
           <Button type="link" size="small" onClick={() => { setCurrentAccount(record); setDetailModalOpen(true); }}>
             详情
           </Button>
@@ -646,42 +1227,30 @@ export default function Accounts() {
               删除
             </Button>
           </Popconfirm>
-          <ActionMenu acc={record} onRefresh={load} />
+          <ActionMenu acc={record} onRefresh={load} actions={platformActions} />
         </Space>
       ),
     },
+  )
+
+  const statusSyncMenuItems: MenuProps['items'] = [
+    {
+      key: `probe:${getStatusSyncScope()}`,
+      label:
+        getStatusSyncScope() === 'selected'
+          ? `同步所选本地状态 (${selectedRowKeys.length})`
+          : `同步当前筛选本地状态 (${total})`,
+      disabled: getStatusSyncScope() === 'selected' ? selectedRowKeys.length === 0 : total === 0,
+    },
+    {
+      key: `remote:${getStatusSyncScope()}`,
+      label:
+        getStatusSyncScope() === 'selected'
+          ? `同步所选 CLIProxyAPI 状态 (${selectedRowKeys.length})`
+          : `同步当前筛选 CLIProxyAPI 状态 (${total})`,
+      disabled: getStatusSyncScope() === 'selected' ? selectedRowKeys.length === 0 : total === 0,
+    },
   ]
-
-  if (currentPlatform === 'chatgpt') {
-    columns.splice(4, 0, {
-      title: 'CPA',
-      key: 'cpa_sync',
-      render: (_: any, record: any) => {
-        const sync = record.cpaSync || {}
-        const uploaded = Boolean(sync.uploaded || sync.uploaded_at)
-        const attempted = Boolean(sync.last_attempt_at)
-        const color = uploaded ? 'success' : attempted ? 'error' : 'default'
-        const label = uploaded ? '已上传' : attempted ? '最近失败' : '未上传'
-        const time = uploaded ? sync.uploaded_at : sync.last_attempt_at
-
-        return (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 140 }}>
-            <Tag color={color}>{label}</Tag>
-            {time ? (
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                {formatSyncTime(time)}
-              </Text>
-            ) : null}
-            {sync.last_message ? (
-              <Text type="secondary" ellipsis={{ tooltip: sync.last_message }} style={{ maxWidth: 220, fontSize: 12 }}>
-                {sync.last_message}
-              </Text>
-            ) : null}
-          </div>
-        )
-      },
-    })
-  }
 
   return (
     <div>
@@ -712,23 +1281,41 @@ export default function Accounts() {
           )}
         </Space>
         <Space>
-          {currentPlatform === 'chatgpt' && selectedRowKeys.length > 0 && (
-            <Popconfirm
-              title={`确认上传选中的 ${selectedRowKeys.length} 个账号到 CPA？`}
-              onConfirm={() => handleCpaBackfill('selected')}
+          {currentPlatform === 'chatgpt' && (
+            <Dropdown
+              trigger={['click']}
+              menu={{
+                items: statusSyncMenuItems,
+                onClick: ({ key }) => {
+                  const [kind, scope] = String(key).split(':') as ['probe' | 'remote', 'selected' | 'all']
+                  handleBatchStatusSync(kind, scope)
+                },
+              }}
             >
-              <Button loading={cpaSyncLoading === 'selected'} icon={<UploadOutlined />}>
-                上传所选 CPA
+              <Button
+                icon={<SyncOutlined />}
+                loading={statusSyncLoading !== ''}
+                disabled={total === 0}
+              >
+                状态同步
               </Button>
-            </Popconfirm>
+            </Dropdown>
           )}
           {currentPlatform === 'chatgpt' && (
             <Popconfirm
-              title="确认补传当前筛选范围内尚未成功上传 CPA 的账号？"
-              onConfirm={() => handleCpaBackfill('pending')}
+              title={
+                getBackfillScope() === 'selected'
+                  ? `确认补传所选 ${selectedRowKeys.length} 个账号中远端未发现的 auth-file？`
+                  : '确认补传当前筛选范围内远端未发现且本地状态有效的账号？'
+              }
+              onConfirm={() => handleCpaBackfill(getBackfillScope())}
             >
-              <Button loading={cpaSyncLoading === 'pending'} icon={<UploadOutlined />} disabled={total === 0}>
-                补传未上传 CPA
+              <Button
+                loading={cpaSyncLoading === 'pending' || cpaSyncLoading === 'selected'}
+                icon={<UploadOutlined />}
+                disabled={getBackfillScope() === 'selected' ? selectedRowKeys.length === 0 : total === 0}
+              >
+                {backfillButtonLabel()}
               </Button>
             </Popconfirm>
           )}
@@ -750,11 +1337,13 @@ export default function Accounts() {
         columns={columns}
         dataSource={accounts}
         loading={loading}
+        size="middle"
         rowSelection={{
           selectedRowKeys,
           onChange: setSelectedRowKeys,
         }}
         pagination={{ pageSize: 20, showSizeChanger: false }}
+        scroll={{ x: isChatgptPlatform ? 1440 : 980 }}
         onRow={(record) => ({
           onDoubleClick: () => {
             setCurrentAccount(record)
@@ -850,6 +1439,8 @@ export default function Accounts() {
         onCancel={() => setDetailModalOpen(false)}
         onOk={handleDetailSave}
         maskClosable={false}
+        width={760}
+        styles={{ body: { maxHeight: '72vh', overflowY: 'auto' } }}
       >
         {currentAccount && (
           <>
@@ -875,7 +1466,17 @@ export default function Accounts() {
               return (
                 <div style={{ marginTop: 8 }}>
                   <div style={{ marginBottom: 4, fontWeight: 500, fontSize: 13 }}>Refresh Token</div>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, background: 'rgba(0,0,0,0.03)', border: '1px solid #e5e7eb', borderRadius: 6, padding: '6px 10px' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: 8,
+                      background: token.colorFillAlter,
+                      border: `1px solid ${token.colorBorder}`,
+                      borderRadius: token.borderRadius,
+                      padding: '8px 10px',
+                    }}
+                  >
                     <Text
                       style={{ fontFamily: 'monospace', fontSize: 11, wordBreak: 'break-all', flex: 1, userSelect: 'text' }}
                       copyable={{ text: rt, tooltips: ['复制 RT', '已复制'] }}
@@ -886,6 +1487,24 @@ export default function Accounts() {
                 </div>
               )
             })()}
+            {currentPlatform === 'chatgpt' ? (
+              <DetailSection title="本地真实状态">
+                {currentAccount.chatgptLocal && Object.keys(currentAccount.chatgptLocal).length > 0 ? (
+                  <LocalProbeSummary probe={currentAccount.chatgptLocal} />
+                ) : (
+                  <Text type="secondary">尚未探测。可在操作菜单中点击“探测本地状态”。</Text>
+                )}
+              </DetailSection>
+            ) : null}
+            {currentPlatform === 'chatgpt' ? (
+              <DetailSection title="CLIProxyAPI 状态">
+                {currentAccount.cliproxySync && Object.keys(currentAccount.cliproxySync).length > 0 ? (
+                  <CliproxySyncSummary sync={currentAccount.cliproxySync} />
+                ) : (
+                  <Text type="secondary">尚未同步。可在操作菜单中点击“同步 CLIProxyAPI 状态”。</Text>
+                )}
+              </DetailSection>
+            ) : null}
           </>
         )}
       </Modal>

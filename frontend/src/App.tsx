@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
-import { ConfigProvider, Layout, Menu, Button } from 'antd'
+import { App as AntdApp, ConfigProvider, Layout, Menu, Button, Spin } from 'antd'
 import {
   DashboardOutlined,
   UserOutlined,
@@ -9,6 +9,7 @@ import {
   SettingOutlined,
   SunOutlined,
   MoonOutlined,
+  LogoutOutlined,
 } from '@ant-design/icons'
 import zhCN from 'antd/locale/zh_CN'
 import Dashboard from '@/pages/Dashboard'
@@ -17,9 +18,40 @@ import Register from '@/pages/Register'
 import Proxies from '@/pages/Proxies'
 import Settings from '@/pages/Settings'
 import TaskHistory from '@/pages/TaskHistory'
+import Login from '@/pages/Login'
 import { darkTheme, lightTheme } from './theme'
+import { apiFetch, clearToken, getToken } from '@/lib/utils'
 
 const { Sider, Content } = Layout
+
+function ProtectedLayout() {
+  const navigate = useNavigate()
+  const [ready, setReady] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/auth/status')
+      .then(r => r.json())
+      .then(s => {
+        const token = getToken()
+        if (s.has_password && !token) {
+          navigate('/login', { replace: true })
+        } else {
+          setReady(true)
+        }
+      })
+      .catch(() => setReady(true))
+  }, [])
+
+  if (!ready) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Spin size="large" />
+      </div>
+    )
+  }
+
+  return <AppContent />
+}
 
 function AppContent() {
   const [themeMode, setThemeMode] = useState<'dark' | 'light'>(() =>
@@ -27,6 +59,7 @@ function AppContent() {
   )
   const [collapsed, setCollapsed] = useState(false)
   const [platforms, setPlatforms] = useState<{ key: string; label: string }[]>([])
+  const [hasPassword, setHasPassword] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
 
@@ -40,11 +73,15 @@ function AppContent() {
   }, [themeMode])
 
   useEffect(() => {
-    fetch('/api/platforms')
-      .then(r => r.json())
+    fetch('/api/auth/status').then(r => r.json()).then(s => setHasPassword(s.has_password)).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    apiFetch('/platforms')
       .then(d => setPlatforms((d || [])
         .filter((p: any) => !['tavily', 'cursor'].includes(p.name))
         .map((p: any) => ({ key: p.name, label: p.display_name }))))
+      .catch(() => {})
   }, [])
 
   const isLight = themeMode === 'light'
@@ -94,6 +131,7 @@ function AppContent() {
 
   return (
     <ConfigProvider theme={currentTheme} locale={zhCN}>
+      <AntdApp>
       <Layout style={{ minHeight: '100vh' }}>
         <Sider
           collapsible
@@ -142,10 +180,13 @@ function AppContent() {
           <div
             style={{
               position: 'absolute',
-              bottom: 16,
+              bottom: 56,
               left: 0,
               right: 0,
               padding: '0 16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
             }}
           >
             <Button
@@ -160,6 +201,21 @@ function AppContent() {
             >
               {!collapsed && (isLight ? '亮色模式' : '暗色模式')}
             </Button>
+            {hasPassword && (
+              <Button
+                block
+                danger
+                icon={<LogoutOutlined />}
+                onClick={() => { clearToken(); navigate('/login') }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: collapsed ? 'center' : 'space-between',
+                }}
+              >
+                {!collapsed && '退出登录'}
+              </Button>
+            )}
           </div>
         </Sider>
         <Content
@@ -180,6 +236,7 @@ function AppContent() {
           </Routes>
         </Content>
       </Layout>
+      </AntdApp>
     </ConfigProvider>
   )
 }
@@ -187,7 +244,10 @@ function AppContent() {
 export default function App() {
   return (
     <BrowserRouter>
-      <AppContent />
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/*" element={<ProtectedLayout />} />
+      </Routes>
     </BrowserRouter>
   )
 }

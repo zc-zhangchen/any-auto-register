@@ -2,10 +2,11 @@
 import os
 import sys
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from core.db import init_db
 from core.registry import load_all
 from api.accounts import router as accounts_router
@@ -15,6 +16,7 @@ from api.proxies import router as proxies_router
 from api.config import router as config_router
 from api.actions import router as actions_router
 from api.integrations import router as integrations_router
+from api.auth import router as auth_router
 
 EXPECTED_CONDA_ENV = os.getenv("APP_CONDA_ENV", "any-auto-register")
 
@@ -71,6 +73,26 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Account Manager", version="1.0.0", lifespan=lifespan)
 
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    path = request.url.path
+    if path.startswith("/api/auth/") or not path.startswith("/api/"):
+        return await call_next(request)
+    from core.config_store import config_store as _cs
+    if not _cs.get("auth_password_hash", ""):
+        return await call_next(request)
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return JSONResponse({"detail": "未认证，请先登录"}, status_code=401)
+    try:
+        from api.auth import verify_token
+        verify_token(auth_header[7:])
+    except HTTPException as e:
+        return JSONResponse({"detail": e.detail}, status_code=e.status_code)
+    return await call_next(request)
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -85,6 +107,7 @@ app.include_router(proxies_router, prefix="/api")
 app.include_router(config_router, prefix="/api")
 app.include_router(actions_router, prefix="/api")
 app.include_router(integrations_router, prefix="/api")
+app.include_router(auth_router, prefix="/api")
 
 
 @app.get("/api/solver/status")

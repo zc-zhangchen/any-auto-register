@@ -1,5 +1,7 @@
 """Playwright 执行器 - 支持 headless/headed 模式"""
+
 from ..base_executor import BaseExecutor, Response
+from ..proxy_utils import build_playwright_proxy_config
 
 
 class PlaywrightExecutor(BaseExecutor):
@@ -13,16 +15,18 @@ class PlaywrightExecutor(BaseExecutor):
 
     def _init(self):
         from playwright.sync_api import sync_playwright
+
         self._pw = sync_playwright().start()
         launch_opts = {"headless": self.headless}
         if self.proxy:
-            launch_opts["proxy"] = {"server": self.proxy}
+            launch_opts["proxy"] = build_playwright_proxy_config(self.proxy)
         self._browser = self._pw.chromium.launch(**launch_opts)
         self._context = self._browser.new_context()
         self._page = self._context.new_page()
 
     def get(self, url, *, headers=None, params=None) -> Response:
         import urllib.parse
+
         if params:
             url = url + "?" + urllib.parse.urlencode(params)
         if headers:
@@ -37,6 +41,7 @@ class PlaywrightExecutor(BaseExecutor):
 
     def post(self, url, *, headers=None, params=None, data=None, json=None) -> Response:
         import urllib.parse, json as _json
+
         if params:
             url = url + "?" + urllib.parse.urlencode(params)
         post_data = None
@@ -63,13 +68,16 @@ class PlaywrightExecutor(BaseExecutor):
     def set_cookies(self, cookies: dict, domain: str = ".example.com") -> None:
         page_url = self._page.url if self._page else None
         if page_url and page_url.startswith("http"):
-            self._context.add_cookies([
-                {"name": k, "value": v, "url": page_url} for k, v in cookies.items()
-            ])
+            self._context.add_cookies(
+                [{"name": k, "value": v, "url": page_url} for k, v in cookies.items()]
+            )
         else:
-            self._context.add_cookies([
-                {"name": k, "value": v, "domain": domain, "path": "/"} for k, v in cookies.items()
-            ])
+            self._context.add_cookies(
+                [
+                    {"name": k, "value": v, "domain": domain, "path": "/"}
+                    for k, v in cookies.items()
+                ]
+            )
 
     def close(self) -> None:
         if self._browser:

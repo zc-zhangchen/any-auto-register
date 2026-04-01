@@ -9,7 +9,7 @@ from sqlmodel import Session, select
 from core.base_platform import Account, AccountStatus
 from core.db import AccountModel, engine
 from services.external_apps import install, list_status, start, start_all, stop, stop_all
-from services.chatgpt_sync import has_cpa_upload_success, upload_account_model_to_cpa
+from services.chatgpt_sync import backfill_chatgpt_account_to_cpa, get_cliproxy_sync_state
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 
@@ -67,7 +67,7 @@ def stop_service(name: str):
 
 @router.post("/backfill")
 def backfill_integrations(body: BackfillRequest):
-    summary = {"total": 0, "success": 0, "failed": 0, "items": []}
+    summary = {"total": 0, "success": 0, "failed": 0, "skipped": 0, "items": []}
     targets = set(body.platforms or [])
 
     with Session(engine) as s:
@@ -88,7 +88,11 @@ def backfill_integrations(body: BackfillRequest):
 
         rows = s.exec(q).all()
         if body.pending_only:
-            rows = [row for row in rows if row.platform != "chatgpt" or not has_cpa_upload_success(row)]
+            rows = [
+                row for row in rows
+                if row.platform != "chatgpt"
+                or str(get_cliproxy_sync_state(row).get("remote_state") or "").strip().lower() == "not_found"
+            ]
 
         if any(row.platform == "grok" for row in rows):
             from services.grok2api_runtime import ensure_grok2api_ready
@@ -107,8 +111,18 @@ def backfill_integrations(body: BackfillRequest):
             try:
                 results = []
                 if row.platform == "chatgpt":
-                    ok, msg = upload_account_model_to_cpa(row, session=s, commit=True)
-                    results.append({"name": "CPA", "ok": ok, "msg": msg})
+                    outcome = backfill_chatgpt_account_to_cpa(row, session=s, commit=True)
+                    ok = bool(outcome.get("ok"))
+                    skipped = bool(outcome.get("skipped"))
+                    results.extend(outcome.get("results") or [])
+                    if not results:
+                        results.append({"name": "CLIProxyAPI", "ok": ok, "msg": outcome.get("message", "")})
+                    if skipped:
+                        summary["skipped"] += 1
+                    elif ok:
+                        summary["success"] += 1
+                    else:
+                        summary["failed"] += 1
 
                 elif row.platform == "grok":
                     from core.config_store import config_store
@@ -134,10 +148,11 @@ def backfill_integrations(body: BackfillRequest):
                     summary["failed"] += 1
                 else:
                     item["results"] = results
-                    if all(r.get("ok") for r in results):
-                        summary["success"] += 1
-                    else:
-                        summary["failed"] += 1
+                    if row.platform != "chatgpt":
+                        if all(r.get("ok") for r in results):
+                            summary["success"] += 1
+                        else:
+                            summary["failed"] += 1
             except Exception as e:
                 s.rollback()
                 item["results"].append({"name": "error", "ok": False, "msg": str(e)})

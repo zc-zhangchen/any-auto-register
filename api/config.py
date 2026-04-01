@@ -61,6 +61,7 @@ CONFIG_KEYS = [
     "codex_proxy_url",
     "codex_proxy_key",
     "codex_proxy_upload_type",
+    "cliproxyapi_base_url",
     "cliproxyapi_management_key",
     "grok2api_url",
     "grok2api_app_key",

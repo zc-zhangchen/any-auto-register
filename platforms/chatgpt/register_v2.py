@@ -1,13 +1,8 @@
 """
 注册流程引擎 V2
-
-采用策略模式封装注册核心（OAuthPkceRegisterStrategy），
-走 auth.openai.com OAuth PKCE 直通注册流程。
-
-外部接口与 plugin.py 完全兼容，无需改动邮箱适配层。
+基于 curl_cffi 的注册状态机，注册成功后直接复用同一会话提取 ChatGPT Session。
 """
 
-import random
 import time
 import logging
 from datetime import datetime
@@ -16,211 +11,33 @@ from typing import Optional, Callable
 from core.base_platform import AccountStatus
 from platforms.chatgpt.register import RegistrationResult
 
-from .oauth_pkce_client import OAuthPkceClient
+from .chatgpt_client import ChatGPTClient
 from .utils import generate_random_name, generate_random_birthday
 
 logger = logging.getLogger(__name__)
 
+class EmailServiceAdapter:
+    """\u5c06 V1 \u7684 email_service \u9002\u914d\u6210 V2 \u6240\u9700\u7684\u63a5\u7801\u63a5\u53e3\u3002"""
+    def __init__(self, email_service, email, log_fn):
+        self.es = email_service
+        self.email = email
+        self.log_fn = log_fn
+        self._used_codes = set()
 
-# ---------------------------------------------------------------------------
-# 名字/生日数据
-# ---------------------------------------------------------------------------
-
-_FIRST_NAMES = [
-    "James", "John", "Robert", "Michael", "David", "William", "Richard",
-    "Joseph", "Thomas", "Charles", "Mary", "Patricia", "Jennifer", "Linda",
-    "Barbara", "Elizabeth", "Susan", "Jessica", "Sarah", "Karen", "Daniel",
-    "Matthew", "Anthony", "Mark", "Steven", "Andrew", "Paul", "Emily",
-    "Emma", "Olivia", "Sophia", "Ava", "Isabella", "Mia",
-]
-_LAST_NAMES = [
-    "Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller",
-    "Davis", "Rodriguez", "Martinez", "Anderson", "Taylor", "Thomas",
-    "Wilson", "Moore", "Jackson", "Martin", "Lee", "Thompson", "White",
-]
-
-
-def _random_name_and_birthday() -> tuple[str, str]:
-    """随机生成全名和生日。"""
-    name = f"{random.choice(_FIRST_NAMES)} {random.choice(_LAST_NAMES)}"
-    year = random.randint(1985, 2004)
-    month = random.randint(1, 12)
-    day = random.randint(1, 28)
-    return name, f"{year}-{month:02d}-{day:02d}"
-
-
-# ---------------------------------------------------------------------------
-# 策略：OAuth PKCE 注册策略
-# ---------------------------------------------------------------------------
-
-class OAuthPkceRegisterStrategy:
-    """
-    OAuth PKCE 注册策略（策略模式）
-
-    完整注册流程（12 步）：
-      1.  检查 IP 地区
-      2.  访问 OAuth 授权 URL，获取 oai-did Cookie
-      3.  获取 Sentinel Token
-      4.  提交邮箱 (authorize/continue)
-      5.  提交密码 (user/register)
-      6.  发送 OTP (email-otp/send)
-      7.  验证 OTP (email-otp/validate)
-      8.  创建账户 (create_account)
-      9.  注册后重新 OAuth 登录
-      10. 解析 workspace_id
-      11. 选择 workspace
-      12. 跟踪重定向链，交换 OAuth code → access_token
-    """
-
-    def execute(
-        self,
-        client: OAuthPkceClient,
-        email_service,
-        email: str,
-        password: str,
-        log: Callable[[str], None],
-    ) -> RegistrationResult:
-        result = RegistrationResult(success=False)
-
-        # ── 步骤 1：IP 检查 ──────────────────────────────────────────────
-        log("步骤 1/12: 检查 IP 地区...")
-        client.check_ip_region()
-
-        # ── 步骤 2：创建邮箱 ────────────────────────────────────────────
-        log("步骤 2/12: 创建邮箱接码订单...")
-        email_data = email_service.create_email()
-        email_addr = email or (email_data.get("email") if email_data else None)
-        if not email_addr:
-            result.error_message = "创建邮箱失败"
-            return result
-        result.email = email_addr
-        result.password = password
-        log(f"邮箱: {email_addr}")
-
-        # ── 步骤 3：初始化 OAuth 会话 ────────────────────────────────────
-        log("步骤 3/12: 访问 OAuth 授权 URL，获取 oai-did...")
-        client.init_oauth_session()
-
-        # ── 步骤 4：获取 Sentinel Token ──────────────────────────────────
-        log("步骤 4/12: 获取 Sentinel Token...")
-        client.refresh_sentinel()
-
-        # ── 步骤 5：提交邮箱 ────────────────────────────────────────────
-        log("步骤 5/12: 提交邮箱...")
-        client.submit_email(email_addr)
-
-        # ── 步骤 6：提交密码 ────────────────────────────────────────────
-        log("步骤 6/12: 提交密码...")
-        continue_url = client.submit_password(email_addr, password)
-
-        # ── 步骤 7：发送 OTP + 等待验证码 ────────────────────────────────
-        log("步骤 7/12: 发送验证码...")
-        otp_sent_at = time.time()
-        client.send_otp(continue_url)
-
-        log("步骤 7/12: 等待邮箱验证码（最多 120s）...")
-        otp_code = email_service.wait_for_verification_code(
-            email_addr,
-            timeout=120,
-            otp_sent_at=otp_sent_at,
-        )
-        if not otp_code:
-            result.error_message = "未收到邮箱验证码"
-            return result
-        log(f"验证码: {otp_code}")
-
-        # ── 步骤 8：验证 OTP ─────────────────────────────────────────────
-        log("步骤 8/12: 验证 OTP...")
-        client.validate_otp(otp_code)
-
-        # ── 步骤 9：创建账户 ────────────────────────────────────────────
-        log("步骤 9/12: 填写账户信息（姓名/生日）...")
-        name, birthdate = _random_name_and_birthday()
-        log(f"账户信息: {name} ({birthdate})")
-        client.create_account(name, birthdate)
-
-        # ── 步骤 10：注册后重新 OAuth 登录 ───────────────────────────────
-        log("步骤 10/12: 注册后重新 OAuth 登录...")
-        login_oauth = client.login_after_register(email_addr, password, otp_code)
-
-        # ── 步骤 11：解析 workspace_id ───────────────────────────────────
-        log("步骤 11/12: 解析 workspace_id...")
-        workspace_id = client.extract_workspace_id()
-        result.workspace_id = workspace_id
-
-        # ── 步骤 12：选择 workspace → 交换 Token ─────────────────────────
-        log("步骤 12/12: 选择 workspace...")
-        ws_continue_url = client.select_workspace(workspace_id)
-        
-        log("步骤 12/12: 跟踪重定向链，交换 OAuth Token...")
-        token_data = client.follow_redirects_and_exchange_token(ws_continue_url, login_oauth)
-
-        # ── 组装结果 ─────────────────────────────────────────────────────
-        result.success = True
-        result.access_token = token_data.get("access_token", "")
-        result.refresh_token = token_data.get("refresh_token", "")
-        result.id_token = token_data.get("id_token", "")
-        result.account_id = token_data.get("account_id", "") or workspace_id
-        result.metadata = {
-            "type": token_data.get("type", "codex"),
-            "expired": token_data.get("expired", ""),
-        }
-
-        log("=" * 50)
-        log("注册流程成功完成！")
-        log("=" * 50)
-        return result
-
-
-# ---------------------------------------------------------------------------
-# Email Service 适配器（为 OAuthPkceClient 提供统一接码接口）
-# ---------------------------------------------------------------------------
-
-class _EmailServiceAdapter:
-    """
-    将 V1 email_service（含 create_email / get_verification_code）
-    适配为 OAuthPkceRegisterStrategy 期待的接口。
-
-    接口：
-      - create_email() → {'email': str, ...}
-      - wait_for_verification_code(email, timeout, otp_sent_at) → str | None
-    """
-
-    def __init__(self, email_service, log: Callable[[str], None]):
-        self._svc = email_service
-        self._log = log
-        self._used_codes: set = set()
-
-    def create_email(self, config=None):
-        return self._svc.create_email(config)
-
-    def wait_for_verification_code(
-        self, email: str, timeout: int = 120, otp_sent_at=None
-    ) -> Optional[str]:
-        self._log(f"等待邮箱 {email} 的验证码（timeout={timeout}s）...")
-        code = self._svc.get_verification_code(
-            email=email,
+    def wait_for_verification_code(self, email, timeout=60, otp_sent_at=None, exclude_codes=None):
+        msg = f"\u6b63\u5728\u7b49\u5f85\u90ae\u7bb1 {email} \u7684\u9a8c\u8bc1\u7801 ({timeout}s)..."
+        self.log_fn(msg)
+        code = self.es.get_verification_code(
             timeout=timeout,
             otp_sent_at=otp_sent_at,
-            exclude_codes=self._used_codes,
+            exclude_codes=exclude_codes or self._used_codes,
         )
         if code:
             self._used_codes.add(code)
-            self._log(f"成功获取验证码: {code}")
+            self.log_fn(f"\u6210\u529f\u83b7\u53d6\u9a8c\u8bc1\u7801: {code}")
         return code
 
-
-# ---------------------------------------------------------------------------
-# 注册引擎（对外暴露给 plugin.py，接口完全向后兼容）
-# ---------------------------------------------------------------------------
-
 class RegistrationEngineV2:
-    """
-    注册引擎 V2（外部接口层）
-
-    plugin.py 通过此类发起注册，不感知内部策略变化。
-    """
-
     def __init__(
         self,
         email_service,
@@ -238,12 +55,12 @@ class RegistrationEngineV2:
         self.task_uuid = task_uuid
         self.max_retries = max(1, int(max_retries or 1))
         self.extra_config = dict(extra_config or {})
-
-        self.email: Optional[str] = None
-        self.password: Optional[str] = None
-        self.logs: list[str] = []
-
-    def _log(self, message: str, level: str = "info") -> None:
+        
+        self.email = None
+        self.password = None
+        self.logs = []
+        
+    def _log(self, message: str, level: str = "info"):
         timestamp = datetime.now().strftime("%H:%M:%S")
         log_message = f"[{timestamp}] {message}"
         self.logs.append(log_message)
@@ -254,63 +71,137 @@ class RegistrationEngineV2:
         else:
             logger.info(log_message)
 
-    def run(self) -> RegistrationResult:
-        """执行注册流程，支持整流程重试。"""
-        result = RegistrationResult(success=False, logs=self.logs)
-        last_error = ""
-
-        for attempt in range(self.max_retries):
-            try:
-                if attempt > 0:
-                    self._log(f"整流程重试 {attempt + 1}/{self.max_retries}...")
-                    time.sleep(2)
-
-                adapter = _EmailServiceAdapter(self.email_service, self._log)
-                client = OAuthPkceClient(proxy=self.proxy_url, log_fn=self._log)
-                strategy = OAuthPkceRegisterStrategy()
-
-                result = strategy.execute(
-                    client=client,
-                    email_service=adapter,
-                    email=self.email or "",
-                    password=self.password or "AAb1234567890!",
-                    log=self._log,
-                )
-                result.logs = self.logs
-
-                if result.success:
-                    return result
-
-                last_error = result.error_message or "注册失败"
-                self._log(f"注册失败: {last_error}", "error")
-
-                if attempt < self.max_retries - 1 and self._should_retry(last_error):
-                    self._log("准备重试...")
-                    continue
-
-                return result
-
-            except Exception as e:
-                last_error = str(e)
-                self._log(f"注册异常: {last_error}", "error")
-                if attempt < self.max_retries - 1 and self._should_retry(last_error):
-                    continue
-                result.error_message = last_error
-                result.logs = self.logs
-                return result
-
-        result.error_message = last_error or "注册失败"
-        result.logs = self.logs
-        return result
-
-    @staticmethod
-    def _should_retry(message: str) -> bool:
-        """判断是否值得重试。"""
+    def _should_retry(self, message: str) -> bool:
         text = str(message or "").lower()
         retriable_markers = [
-            "tls", "ssl", "curl: (35)",
-            "ip 地区检查失败", "sentinel",
-            "timeout", "timed out", "connection",
-            "验证码", "otp",
+            "tls",
+            "ssl",
+            "curl: (35)",
+            "预授权被拦截",
+            "authorize",
+            "registration_disallowed",
+            "http 400",
+            "创建账号失败",
+            "未获取到 authorization code",
+            "consent",
+            "workspace",
+            "organization",
+            "otp",
+            "验证码",
+            "session",
+            "accessToken",
+            "next-auth",
         ]
-        return any(m in text for m in retriable_markers)
+        return any(marker.lower() in text for marker in retriable_markers)
+
+    def run(self) -> RegistrationResult:
+        result = RegistrationResult(success=False, logs=self.logs)
+        try:
+            last_error = ""
+            for attempt in range(self.max_retries):
+                try:
+                    if attempt == 0:
+                        self._log("=" * 60)
+                        self._log("开始注册流程 V2 (Session 复用直取 AccessToken)")
+                        self._log(f"请求模式: {self.browser_mode}")
+                        self._log("=" * 60)
+                    else:
+                        self._log(f"整流程重试 {attempt + 1}/{self.max_retries} ...")
+                        time.sleep(1)
+
+                    # 1. 创建邮箱
+                    email_data = self.email_service.create_email()
+                    email_addr = self.email or (email_data.get('email') if email_data else None)
+                    if not email_addr:
+                        result.error_message = "创建邮箱失败"
+                        return result
+
+                    result.email = email_addr
+
+                    pwd = self.password or "AAb1234567890!"
+                    result.password = pwd
+
+                    # 随机姓名、生日
+                    first_name, last_name = generate_random_name()
+                    birthdate = generate_random_birthday()
+
+                    self._log(f"邮箱: {email_addr}, 密码: {pwd}")
+                    self._log(f"注册信息: {first_name} {last_name}, 生日: {birthdate}")
+
+                    # 使用包装器为底层客户端提供接码服务
+                    skymail_adapter = EmailServiceAdapter(self.email_service, email_addr, self._log)
+
+                    # 2. 初始化 V2 客户端
+                    chatgpt_client = ChatGPTClient(
+                        proxy=self.proxy_url,
+                        verbose=False,
+                        browser_mode=self.browser_mode,
+                    )
+                    chatgpt_client._log = self._log
+
+                    self._log("步骤 1/2: 执行注册状态机...")
+
+                    success, msg = chatgpt_client.register_complete_flow(
+                        email_addr, pwd, first_name, last_name, birthdate, skymail_adapter
+                    )
+
+                    if not success:
+                        last_error = f"注册流失败: {msg}"
+                        if attempt < self.max_retries - 1 and self._should_retry(msg):
+                            self._log(f"注册流失败，准备整流程重试: {msg}")
+                            continue
+                        result.error_message = last_error
+                        return result
+
+                    self._log("步骤 2/2: 复用注册会话，直接获取 ChatGPT Session / AccessToken...")
+                    session_ok, session_result = chatgpt_client.reuse_session_and_get_tokens()
+
+                    if session_ok:
+                        self._log("Token 提取完成！")
+                        result.success = True
+                        result.access_token = session_result.get("access_token", "")
+                        result.session_token = session_result.get("session_token", "")
+                        result.account_id = (
+                            session_result.get("account_id")
+                            or session_result.get("user_id")
+                            or ("v2_acct_" + chatgpt_client.device_id[:8])
+                        )
+                        result.workspace_id = session_result.get("workspace_id", "")
+                        result.metadata = {
+                            "auth_provider": session_result.get("auth_provider", ""),
+                            "expires": session_result.get("expires", ""),
+                            "user_id": session_result.get("user_id", ""),
+                            "user": session_result.get("user") or {},
+                            "account": session_result.get("account") or {},
+                        }
+
+                        if result.workspace_id:
+                            self._log(f"Session Workspace ID: {result.workspace_id}")
+
+                        self._log("=" * 60)
+                        self._log("注册流程成功结束!")
+                        self._log("=" * 60)
+                        return result
+
+                    last_error = f"注册成功，但复用会话获取 AccessToken 失败: {session_result}"
+                    if attempt < self.max_retries - 1:
+                        self._log(f"{last_error}，准备整流程重试")
+                        continue
+                    result.error_message = last_error
+                    return result
+                except Exception as attempt_error:
+                    last_error = str(attempt_error)
+                    if attempt < self.max_retries - 1 and self._should_retry(last_error):
+                        self._log(f"本轮出现异常，准备整流程重试: {last_error}")
+                        continue
+                    raise
+
+            result.error_message = last_error or "注册失败"
+            return result
+                
+        except Exception as e:
+            self._log(f"V2 注册全流程执行异常: {e}", "error")
+            import traceback
+            traceback.print_exc()
+            result.error_message = str(e)
+            return result
