@@ -1041,6 +1041,9 @@ class OAuthClient:
         tried_codes = set(getattr(skymail_client, "_used_codes", set()))
         otp_deadline = time.time() + 30
         otp_sent_at = time.time()
+        duplicate_code = None
+        duplicate_hits = 0
+        last_empty_wait_log_at = 0.0
 
         def validate_otp(code):
             tried_codes.add(code)
@@ -1098,13 +1101,26 @@ class OAuthClient:
                     code = None
 
                 if not code:
-                    self._log("暂未收到新的 OTP，继续等待...")
+                    now = time.time()
+                    if now - last_empty_wait_log_at >= 8 or remaining <= 2:
+                        self._log("暂未收到新的 OTP，继续等待...")
+                        last_empty_wait_log_at = now
                     continue
 
                 if code in tried_codes:
-                    self._log(f"跳过已尝试验证码: {code}")
+                    duplicate_hits = duplicate_hits + 1 if code == duplicate_code else 1
+                    duplicate_code = code
+                    if duplicate_hits == 1 or duplicate_hits % 5 == 0:
+                        suffix = f"（重复 {duplicate_hits} 次）" if duplicate_hits > 1 else ""
+                        self._log(f"邮箱返回重复 OTP，继续等待新验证码: {code}{suffix}")
+                    backoff = min(2.0, max(0.0, otp_deadline - time.time()))
+                    if backoff > 0:
+                        time.sleep(backoff)
                     continue
 
+                duplicate_code = None
+                duplicate_hits = 0
+                last_empty_wait_log_at = 0.0
                 next_state = validate_otp(code)
                 if next_state:
                     return next_state

@@ -12,6 +12,7 @@ from core.base_platform import AccountStatus
 from platforms.chatgpt.register import RegistrationResult
 
 from .chatgpt_client import ChatGPTClient
+from .oauth_client import OAuthClient
 from .utils import generate_random_name, generate_random_birthday
 
 logger = logging.getLogger(__name__)
@@ -25,17 +26,51 @@ class EmailServiceAdapter:
         self._used_codes = set()
 
     def wait_for_verification_code(self, email, timeout=60, otp_sent_at=None, exclude_codes=None):
-        msg = f"\u6b63\u5728\u7b49\u5f85\u90ae\u7bb1 {email} \u7684\u9a8c\u8bc1\u7801 ({timeout}s)..."
-        self.log_fn(msg)
-        code = self.es.get_verification_code(
-            timeout=timeout,
-            otp_sent_at=otp_sent_at,
-            exclude_codes=exclude_codes or self._used_codes,
-        )
-        if code:
+        """\u5728\u6307\u5b9a\u65f6\u95f4\u7a97\u53e3\u5185\u7b49\u5f85\u672a\u4f7f\u7528\u7684\u65b0\u9a8c\u8bc1\u7801\uff0c\u81ea\u52a8\u5ffd\u7565\u90ae\u7bb1\u670d\u52a1\u91cd\u590d\u8fd4\u56de\u7684\u65e7\u7801\u3002AI by zb"""
+        total_timeout = max(1, int(timeout or 0))
+        blocked_codes = set(exclude_codes or []) | set(self._used_codes)
+        deadline = time.time() + total_timeout
+        duplicate_code = None
+        duplicate_hits = 0
+
+        self.log_fn(f"\u6b63\u5728\u7b49\u5f85\u90ae\u7bb1 {email} \u7684\u9a8c\u8bc1\u7801 ({total_timeout}s)...")
+
+        while time.time() < deadline:
+            remaining = max(1, int(deadline - time.time()))
+            try:
+                code = self.es.get_verification_code(
+                    timeout=remaining,
+                    otp_sent_at=otp_sent_at,
+                    exclude_codes=blocked_codes,
+                )
+            except TimeoutError:
+                break
+
+            if not code:
+                break
+
+            code = str(code).strip()
+            if not code:
+                break
+
+            if code in blocked_codes:
+                duplicate_hits = duplicate_hits + 1 if code == duplicate_code else 1
+                duplicate_code = code
+                if duplicate_hits == 1 or duplicate_hits % 3 == 0:
+                    suffix = f"\uff08\u91cd\u590d {duplicate_hits} \u6b21\uff09" if duplicate_hits > 1 else ""
+                    self.log_fn(f"\u90ae\u7bb1\u8fd4\u56de\u4e86\u5df2\u5904\u7406\u7684\u65e7\u9a8c\u8bc1\u7801\uff0c\u7ee7\u7eed\u7b49\u5f85\u65b0\u9a8c\u8bc1\u7801: {code}{suffix}")
+                cooldown = min(1.5, max(0.0, deadline - time.time()))
+                if cooldown > 0:
+                    time.sleep(cooldown)
+                continue
+
             self._used_codes.add(code)
             self.log_fn(f"\u6210\u529f\u83b7\u53d6\u9a8c\u8bc1\u7801: {code}")
-        return code
+            return code
+
+        if duplicate_code and duplicate_hits:
+            self.log_fn(f"\u7b49\u5f85\u65b0\u9a8c\u8bc1\u7801\u8d85\u65f6\uff0c\u671f\u95f4\u4ec5\u6536\u5230\u91cd\u590d\u9a8c\u8bc1\u7801: {duplicate_code}\uff08\u5171 {duplicate_hits} \u6b21\uff09")
+        return None
 
 class RegistrationEngineV2:
     def __init__(
@@ -91,6 +126,72 @@ class RegistrationEngineV2:
             "next-auth",
         ]
         return any(marker.lower() in text for marker in retriable_markers)
+
+    def _should_fetch_oauth_tokens(self) -> bool:
+        """仅在已配置 ChatGPT 外部上传目标时才补拉 OAuth tokens。AI by zb"""
+        try:
+            from core.config_store import config_store
+        except Exception as exc:
+            self._log(f"读取上传配置失败，默认跳过 OAuth token 补拉: {exc}")
+            return False
+
+        upload_targets = {
+            "CPA": str(config_store.get("cpa_api_url", "") or "").strip(),
+            "Team Manager": str(config_store.get("team_manager_url", "") or "").strip(),
+        }
+        enabled_targets = [name for name, value in upload_targets.items() if value]
+        if not enabled_targets:
+            self._log("未配置 ChatGPT 外部上传目标，跳过 OAuth token 补拉")
+            return False
+
+        self._log(f"检测到已配置上传目标: {', '.join(enabled_targets)}")
+        return True
+
+    def _fetch_oauth_tokens(
+        self,
+        chatgpt_client: ChatGPTClient,
+        email: str,
+        password: str,
+        skymail_adapter: EmailServiceAdapter,
+    ) -> dict[str, str]:
+        """复用当前注册会话补拉 OAuth tokens，尽量拿到 refresh_token。AI by zb"""
+
+        oauth_client = OAuthClient(
+            config={},
+            proxy=self.proxy_url,
+            verbose=False,
+            browser_mode=self.browser_mode,
+        )
+        oauth_client.session = chatgpt_client.session
+        oauth_client._log = self._log
+
+        try:
+            tokens = oauth_client.login_and_get_tokens(
+                email,
+                password,
+                chatgpt_client.device_id,
+                user_agent=chatgpt_client.ua,
+                sec_ch_ua=chatgpt_client.sec_ch_ua,
+                impersonate=chatgpt_client.impersonate,
+                skymail_client=skymail_adapter,
+            )
+        except Exception as exc:
+            self._log(f"OAuth token 补拉异常: {exc}")
+            return {}
+
+        if not isinstance(tokens, dict):
+            self._log("OAuth token 补拉失败，继续仅保存 session/access token")
+            return {}
+
+        normalized_tokens = {
+            "access_token": str(tokens.get("access_token") or "").strip(),
+            "refresh_token": str(tokens.get("refresh_token") or "").strip(),
+            "id_token": str(tokens.get("id_token") or "").strip(),
+        }
+        if not normalized_tokens["access_token"]:
+            self._log("OAuth token 补拉未返回 access_token，继续仅保存 session/access token")
+            return {}
+        return normalized_tokens
 
     def run(self) -> RegistrationResult:
         result = RegistrationResult(success=False, logs=self.logs)
@@ -171,7 +272,29 @@ class RegistrationEngineV2:
                             "user_id": session_result.get("user_id", ""),
                             "user": session_result.get("user") or {},
                             "account": session_result.get("account") or {},
+                            "oauth_refresh_token_available": False,
                         }
+
+                        if self._should_fetch_oauth_tokens():
+                            self._log("附加步骤: 检测到上传目标配置，尝试复用当前登录态换取 OAuth Tokens...")
+                            oauth_tokens = self._fetch_oauth_tokens(
+                                chatgpt_client,
+                                email_addr,
+                                pwd,
+                                skymail_adapter,
+                            )
+                            if oauth_tokens:
+                                result.access_token = oauth_tokens.get("access_token", "") or result.access_token
+                                result.refresh_token = oauth_tokens.get("refresh_token", "")
+                                result.id_token = oauth_tokens.get("id_token", "")
+                                result.metadata["oauth_refresh_token_available"] = bool(result.refresh_token)
+                                if result.refresh_token:
+                                    self._log("OAuth refresh_token 补拉成功")
+                                else:
+                                    self._log("OAuth token 补拉完成，但未返回 refresh_token")
+                            result.metadata["oauth_token_fetch_skipped"] = False
+                        else:
+                            result.metadata["oauth_token_fetch_skipped"] = True
 
                         if result.workspace_id:
                             self._log(f"Session Workspace ID: {result.workspace_id}")

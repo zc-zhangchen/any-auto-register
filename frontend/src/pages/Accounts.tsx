@@ -307,6 +307,8 @@ export default function Accounts() {
             freemail_admin_token: cfg.freemail_admin_token,
             freemail_username: cfg.freemail_username,
             freemail_password: cfg.freemail_password,
+            freemail_domain_index: cfg.freemail_domain_index,
+            freemail_length: cfg.freemail_length,
             cfworker_api_url: cfg.cfworker_api_url,
             cfworker_admin_token: cfg.cfworker_admin_token,
             cfworker_domain: cfg.cfworker_domain,

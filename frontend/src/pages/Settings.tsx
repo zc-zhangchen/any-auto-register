@@ -75,6 +75,8 @@ const TAB_ITEMS = [
           { key: 'freemail_admin_token', label: '管理员令牌', secret: true },
           { key: 'freemail_username', label: '用户名（可选）' },
           { key: 'freemail_password', label: '密码（可选）', secret: true },
+          { key: 'freemail_domain_index', label: '域索引（可选）', placeholder: '例如 1,2,3，生成时随机取一个' },
+          { key: 'freemail_length', label: '邮箱长度（可选）', placeholder: '留空默认 8-16 随机；也支持 12 / 8-16 / 8,10,12' },
         ],
       },
       {

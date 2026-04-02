@@ -1,12 +1,12 @@
+from __future__ import annotations
+
 """
 Token 刷新模块
 支持 Session Token 和 OAuth Refresh Token 两种刷新方式
 """
 
 import logging
-import json
-import time
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -28,6 +28,14 @@ class TokenRefreshResult:
     refresh_token: str = ""
     expires_at: Optional[datetime] = None
     error_message: str = ""
+
+
+def _normalize_bearer_token(token: str | None) -> str:
+    """AI by zb: 兼容传入纯 token 或 `Bearer xxx` 两种格式。"""
+    raw = str(token or "").strip()
+    if raw.lower().startswith("bearer "):
+        return raw[7:].strip()
+    return raw
 
 
 class TokenRefreshManager:

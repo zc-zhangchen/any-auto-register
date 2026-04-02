@@ -77,16 +77,17 @@
 
 ## 环境要求
 
-- Python 3.12+
+- Python 3.12.x
 - Node.js 18+
-- Conda（推荐）
+- `uv`
+- `pyenv`（Windows 推荐 `pyenv-win`）
 
 ## 推荐环境
 
-推荐固定使用 conda 环境名：
+推荐固定使用项目根目录虚拟环境：
 
 ```bash
-any-auto-register
+.venv
 ```
 
 本项目已经提供 Windows 启动脚本：
@@ -96,7 +97,7 @@ any-auto-register
 - `D:\codemodule\ai\any-auto-register\stop_backend.bat`
 - `D:\codemodule\ai\any-auto-register\stop_backend.ps1`
 
-它们会强制通过 `any-auto-register` 环境启动后端，避免出现：
+它们会强制通过项目 `.venv` 启动后端，避免出现：
 
 - 后端能启动，但 Solver 起不来
 - `ModuleNotFoundError: quart`
@@ -106,24 +107,26 @@ any-auto-register
 
 ## 安装
 
-### 1. 创建 conda 环境
+### 1. 固定 Python 版本
 
 ```bash
-conda create -n any-auto-register python=3.12 -y
-conda activate any-auto-register
+pyenv install 3.12.10
+pyenv local 3.12.10
 ```
 
-### 2. 安装后端依赖
+> 项目根目录已提供 `.python-version`，执行 `pyenv local` 后会写入/对齐为当前项目版本。
+
+### 2. 使用 uv 初始化后端环境
 
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
 
 ### 3. 安装浏览器依赖
 
 ```bash
-python -m playwright install chromium
-python -m camoufox fetch
+uv run python -m playwright install chromium
+uv run python -m camoufox fetch
 ```
 
 ### 4. 安装并构建前端
@@ -161,14 +164,13 @@ start_backend.bat
 
 默认会使用：
 
-- conda 环境：`any-auto-register`
+- 虚拟环境：`.\.venv`
 - 服务地址：`http://localhost:8000`
 
 ### 手动启动方式
 
 ```bash
-conda activate any-auto-register
-python main.py
+uv run python main.py
 ```
 
 ### 启动后访问
@@ -244,13 +246,12 @@ http://localhost:8889
 前端“全局配置 → 验证码 → Turnstile Solver”显示的是 **后端检测结果**，因此：
 
 - 后端没启动 → 前端会显示“未运行”
-- 后端启动了，但不是在正确 conda 环境里 → Solver 可能启动失败
+- 后端启动了，但不是在正确 `.venv` 虚拟环境里 → Solver 可能启动失败
 
 ### 手动启动 Solver
 
 ```bash
-conda activate any-auto-register
-python services/turnstile_solver/start.py --browser_type camoufox --port 8889
+uv run python services/turnstile_solver/start.py --browser_type camoufox --port 8889
 ```
 
 ### Solver 日志
@@ -306,7 +307,7 @@ python -c "import sys; print(sys.executable)"
 应当类似于：
 
 ```text
-D:\miniconda\conda3\envs\any-auto-register\python.exe
+D:\codemodule\ai\any-auto-register\.venv\Scripts\python.exe
 ```
 
 ### 4. Solver 能打开，但状态还是不对
@@ -393,7 +394,7 @@ http://localhost:8889/
 | 服务         | 说明                                           |
 | ---------- | -------------------------------------------- |
 | YesCaptcha | 需填写 Client Key                               |
-| 本地 Solver  | 依赖 `camoufox` + `quart`，并要求后端运行在正确 conda 环境中 |
+| 本地 Solver  | 依赖 `camoufox` + `quart`，并要求后端运行在项目 `.venv` 中 |
 
 ***
 

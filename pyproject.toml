@@ -1,0 +1,26 @@
+[project]
+name = "any-auto-register"
+version = "0.1.0"
+description = "Multi-platform auto registration system"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "aiofiles>=23.0.0",
+    "camoufox>=0.4.0",
+    "cbor2>=5.4.0",
+    "curl_cffi>=0.6.0",
+    "fastapi>=0.110.0",
+    "jwcrypto>=1.5.0",
+    "patchright>=1.52.5",
+    "playwright>=1.43.0",
+    "pydantic>=2.0.0",
+    "pyinstaller>=6.0.0",
+    "quart>=0.19.4",
+    "requests>=2.31.0",
+    "rich>=13.7.1",
+    "sqlmodel>=0.0.16",
+    "uvicorn>=0.29.0",
+]
+
+[tool.uv]
+package = false

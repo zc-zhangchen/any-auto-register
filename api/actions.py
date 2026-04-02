@@ -55,7 +55,17 @@ def execute_action(
         # 若操作返回了新 token，更新数据库
         if result.get("ok") and result.get("data", {}) and isinstance(result["data"], dict):
             data = result["data"]
-            tracked_keys = {"access_token", "accessToken", "refreshToken", "clientId", "clientSecret", "webAccessToken"}
+            tracked_keys = {
+                "access_token",
+                "accessToken",
+                "refresh_token",
+                "refreshToken",
+                "id_token",
+                "session_token",
+                "clientId",
+                "clientSecret",
+                "webAccessToken",
+            }
             if tracked_keys.intersection(data.keys()):
                 extra = acc_model.get_extra()
                 extra.update(data)

@@ -199,7 +199,8 @@ def _find_desktop_pid(name: str) -> int | None:
     try:
         processes = subprocess.check_output(
             [
-                "powershell",
+                _powershell_exe(),
+                "-NoLogo",
                 "-NoProfile",
                 "-Command",
                 "Get-CimInstance Win32_Process | "
@@ -288,16 +289,29 @@ def _find_go() -> str | None:
     return None
 
 
-def _conda_exe() -> str | None:
+def _powershell_exe() -> str:
+    """AI by zb: 返回当前系统可用的 PowerShell 可执行文件。"""
+    return shutil.which("pwsh") or shutil.which("powershell") or "powershell"
+
+
+def _uv_exe() -> str | None:
+    """AI by zb: 返回可用的 uv 可执行文件路径。"""
     candidates = [
-        shutil.which("conda"),
-        r"D:\miniconda\conda3\Scripts\conda.exe",
-        r"D:\miniconda\conda3\Library\bin\conda.bat",
+        shutil.which("uv"),
+        str(Path.home() / ".local" / "bin" / "uv.exe"),
+        str(Path.home() / ".cargo" / "bin" / "uv.exe"),
     ]
     for item in candidates:
         if item and Path(item).exists():
             return item
     return None
+
+
+def _venv_python(venv_dir: Path) -> Path:
+    """AI by zb: 根据平台返回虚拟环境内的 Python 可执行文件路径。"""
+    if os.name == "nt":
+        return venv_dir / "Scripts" / "python.exe"
+    return venv_dir / "bin" / "python"
 
 
 def _resolve_kiro_exe() -> str | None:
@@ -359,43 +373,35 @@ def _ensure_kiro_extracted_exe() -> str | None:
     return None
 
 
-def _ensure_grok2api_conda_env(repo: Path) -> str:
-    env_name = "grok2api-313"
-    conda = _conda_exe()
-    if not conda:
-        raise RuntimeError("未找到 conda，无法为 grok2api 自动创建 Python 3.13 环境")
+def _ensure_grok2api_uv_env(repo: Path) -> Path:
+    """AI by zb: 使用 uv 为 grok2api 准备独立的 Python 3.13 虚拟环境。"""
+    venv_dir = repo / ".venv"
+    python_exe = _venv_python(venv_dir)
+    marker = repo / ".grok2api-env-ready"
 
-    check = subprocess.run(
-        [conda, "run", "--no-capture-output", "-n", env_name, "python", "--version"],
+    if python_exe.exists() and marker.exists():
+        return python_exe
+
+    uv = _uv_exe()
+    if not uv:
+        raise RuntimeError("未找到 uv，无法为 grok2api 自动创建 Python 3.13 虚拟环境")
+
+    if not python_exe.exists():
+        subprocess.run(
+            [uv, "venv", "--python", "3.13", str(venv_dir)],
+            cwd=str(repo),
+            check=True,
+            creationflags=_creationflags(),
+        )
+
+    subprocess.run(
+        [uv, "pip", "install", "--python", str(python_exe), "."],
         cwd=str(repo),
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        check=True,
         creationflags=_creationflags(),
     )
-    if check.returncode != 0:
-        subprocess.run(
-            [conda, "create", "-y", "-n", env_name, "python=3.13"],
-            cwd=str(repo),
-            check=True,
-            creationflags=_creationflags(),
-        )
-
-    marker = repo / ".grok2api-env-ready"
-    if not marker.exists():
-        subprocess.run(
-            [conda, "run", "--no-capture-output", "-n", env_name, "python", "-m", "pip", "install", "--upgrade", "pip"],
-            cwd=str(repo),
-            check=True,
-            creationflags=_creationflags(),
-        )
-        subprocess.run(
-            [conda, "run", "--no-capture-output", "-n", env_name, "python", "-m", "pip", "install", "."],
-            cwd=str(repo),
-            check=True,
-            creationflags=_creationflags(),
-        )
-        marker.write_text(env_name, encoding="utf-8")
-    return env_name
+    marker.write_text(str(python_exe), encoding="utf-8")
+    return python_exe
 
 
 def _ensure_cliproxyapi_runtime_config(repo: Path):
@@ -479,15 +485,9 @@ def _build_command(name: str) -> tuple[list[str], Path]:
 
     if name == "grok2api":
         _ensure_grok2api_runtime_config(repo)
-        env_name = _ensure_grok2api_conda_env(repo)
-        conda = _conda_exe()
+        python_exe = _ensure_grok2api_uv_env(repo)
         return [
-            conda,
-            "run",
-            "--no-capture-output",
-            "-n",
-            env_name,
-            "python",
+            str(python_exe),
             "-m",
             "granian",
             "--interface",

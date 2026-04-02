@@ -105,6 +105,8 @@ def create_mailbox(provider: str, extra: dict = None, proxy: str = None) -> 'Bas
             admin_token=extra.get("freemail_admin_token", ""),
             username=extra.get("freemail_username", ""),
             password=extra.get("freemail_password", ""),
+            domain_index=extra.get("freemail_domain_index", ""),
+            length=extra.get("freemail_length", ""),
             proxy=proxy,
         )
     elif provider == "moemail":
@@ -847,14 +849,86 @@ class FreemailMailbox(BaseMailbox):
 
     def __init__(self, api_url: str, admin_token: str = "",
                  username: str = "", password: str = "",
+                 domain_index: str = "",
+                 length: str = "",
                  proxy: str = None):
         self.api = api_url.rstrip("/")
         self.admin_token = admin_token
         self.username = username
         self.password = password
+        self.domain_index = domain_index
+        self.length = length
         self.proxy = {"http": proxy, "https": proxy} if proxy else None
         self._session = None
         self._email = None
+
+    def _choose_domain_index(self) -> int:
+        """AI by zb: 从配置的域索引池中随机挑选一个合法 domainIndex，留空时默认返回 0。"""
+        import random
+
+        raw = str(self.domain_index or "").replace("，", ",").replace(";", ",").strip()
+        if not raw:
+            return 0
+
+        indexes: list[int] = []
+        for item in raw.split(","):
+            value = item.strip()
+            if not value:
+                continue
+            try:
+                parsed = int(value)
+            except Exception:
+                continue
+            if parsed > 0:
+                indexes.append(parsed)
+        if not indexes:
+            return 0
+        return random.choice(indexes)
+
+    def _choose_length(self) -> int:
+        """AI by zb: 解析邮箱长度配置；留空时随机返回 8-16。"""
+        import random
+
+        raw = str(self.length or "").strip()
+        if not raw:
+            return random.randint(8, 16)
+
+        normalized = raw.replace("，", ",").replace("；", ",").replace(";", ",")
+        if "-" in normalized:
+            parts = [item.strip() for item in normalized.split("-", 1)]
+            if len(parts) == 2:
+                try:
+                    start = int(parts[0])
+                    end = int(parts[1])
+                    if start > 0 and end > 0:
+                        if start > end:
+                            start, end = end, start
+                        return random.randint(start, end)
+                except Exception:
+                    pass
+
+        if "," in normalized:
+            candidates: list[int] = []
+            for item in normalized.split(","):
+                value = item.strip()
+                if not value:
+                    continue
+                try:
+                    parsed = int(value)
+                except Exception:
+                    continue
+                if parsed > 0:
+                    candidates.append(parsed)
+            if candidates:
+                return random.choice(candidates)
+
+        try:
+            parsed = int(normalized)
+            if parsed > 0:
+                return parsed
+        except Exception:
+            pass
+        return random.randint(8, 16)
 
     def _get_session(self):
         import requests
@@ -872,8 +946,14 @@ class FreemailMailbox(BaseMailbox):
     def get_email(self) -> MailboxAccount:
         if not self._session:
             self._get_session()
-        import requests
-        r = self._session.get(f"{self.api}/api/generate", timeout=15)
+        params = {"mode": "human"}
+        selected_domain_index = self._choose_domain_index()
+        selected_length = self._choose_length()
+        params["domainIndex"] = selected_domain_index
+        params["length"] = selected_length
+        self._log(f"[Freemail] 使用 domainIndex={selected_domain_index}")
+        self._log(f"[Freemail] 使用 length={selected_length}")
+        r = self._session.get(f"{self.api}/api/generate", params=params, timeout=15)
         data = r.json()
         email = data.get("email", "")
         self._email = email
@@ -891,24 +971,55 @@ class FreemailMailbox(BaseMailbox):
     def wait_for_code(self, account: MailboxAccount, keyword: str = "",
                       timeout: int = 120, before_ids: set = None, code_pattern: str = None, **kwargs) -> str:
         import re, time
+        from datetime import datetime, timezone
+
         seen = set(before_ids or [])
+        exclude_codes = set(kwargs.get("exclude_codes") or [])
+        otp_sent_at = kwargs.get("otp_sent_at")
+        otp_cutoff = float(otp_sent_at) - 2 if otp_sent_at else None
         start = time.time()
         while time.time() - start < timeout:
             try:
                 r = self._session.get(f"{self.api}/api/emails",
                     params={"mailbox": account.email, "limit": 20}, timeout=10)
-                for msg in r.json():
+                for msg in sorted(r.json(), key=lambda item: item.get("id", 0), reverse=True):
                     mid = str(msg.get("id", ""))
-                    if not mid or mid in seen: continue
+                    if not mid or mid in seen:
+                        continue
+
+                    created_at = str(
+                        msg.get("created_at")
+                        or msg.get("createdAt")
+                        or msg.get("date")
+                        or ""
+                    ).strip()
+                    if otp_cutoff and created_at:
+                        try:
+                            if created_at.isdigit():
+                                mail_ts = int(created_at)
+                                if mail_ts > 10**12:
+                                    mail_ts = mail_ts / 1000
+                            else:
+                                normalized_created_at = created_at.replace("Z", "+00:00")
+                                parsed_dt = datetime.fromisoformat(normalized_created_at)
+                                if parsed_dt.tzinfo is None:
+                                    parsed_dt = parsed_dt.replace(tzinfo=timezone.utc)
+                                mail_ts = parsed_dt.timestamp()
+                            if mail_ts < otp_cutoff:
+                                continue
+                        except Exception:
+                            pass
+
                     seen.add(mid)
                     # 直接用 verification_code 字段
                     code = str(msg.get("verification_code") or "")
-                    if code and code != "None":
+                    if code and code != "None" and code not in exclude_codes:
                         return code
                     # 兜底：从 preview 提取
                     text = str(msg.get("preview", "")) + " " + str(msg.get("subject", ""))
                     code = self._safe_extract(text, code_pattern)
-                    if code: return code
+                    if code and code not in exclude_codes:
+                        return code
             except Exception:
                 pass
             time.sleep(3)

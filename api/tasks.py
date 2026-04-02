@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 from typing import Optional
 from core.db import TaskLog, engine
-import time, json, asyncio, threading, logging
+import time, json, asyncio, threading, logging, re
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 logger = logging.getLogger(__name__)
@@ -51,7 +51,8 @@ class TaskLogBatchDeleteRequest(BaseModel):
 def _log(task_id: str, msg: str):
     """向任务追加一条日志"""
     ts = time.strftime("%H:%M:%S")
-    entry = f"[{ts}] {msg}"
+    text = str(msg or "")
+    entry = text if re.match(r"^\[\d{2}:\d{2}:\d{2}\]\s", text) else f"[{ts}] {text}"
     with _tasks_lock:
         if task_id in _tasks:
             _tasks[task_id].setdefault("logs", []).append(entry)

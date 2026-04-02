@@ -16,34 +16,52 @@ from api.config import router as config_router
 from api.actions import router as actions_router
 from api.integrations import router as integrations_router
 
-EXPECTED_CONDA_ENV = os.getenv("APP_CONDA_ENV", "any-auto-register")
+EXPECTED_VENV_DIR = os.getenv("APP_VENV_DIR", ".venv")
 
 
-def _detect_conda_env() -> str:
-    conda_env = os.getenv("CONDA_DEFAULT_ENV")
-    if conda_env:
-        return conda_env
+def _expected_virtual_env_path() -> str:
+    """AI by zb: 返回项目期望使用的虚拟环境绝对路径。"""
+    if os.path.isabs(EXPECTED_VENV_DIR):
+        return os.path.normpath(EXPECTED_VENV_DIR)
+    return os.path.normpath(os.path.join(os.path.dirname(__file__), EXPECTED_VENV_DIR))
 
-    prefix_parts = os.path.normpath(sys.prefix).split(os.sep)
-    if "envs" in prefix_parts:
-        idx = prefix_parts.index("envs")
-        if idx + 1 < len(prefix_parts):
-            return prefix_parts[idx + 1]
-    return ""
+
+def _detect_virtual_env() -> tuple[str, str]:
+    """AI by zb: 检测当前 Python 所在的虚拟环境名称与路径。"""
+    virtual_env = os.getenv("VIRTUAL_ENV")
+    if virtual_env:
+        normalized = os.path.normpath(virtual_env)
+        return os.path.basename(normalized), normalized
+
+    base_prefix = getattr(sys, "base_prefix", sys.prefix)
+    if sys.prefix != base_prefix:
+        normalized = os.path.normpath(sys.prefix)
+        return os.path.basename(normalized), normalized
+    return "", ""
+
+
+def _is_expected_virtual_env(current_path: str) -> bool:
+    """AI by zb: 判断当前虚拟环境是否为项目约定的环境路径。"""
+    if not current_path:
+        return False
+    expected = os.path.normcase(os.path.abspath(_expected_virtual_env_path()))
+    current = os.path.normcase(os.path.abspath(current_path))
+    return current == expected
 
 
 def _print_runtime_info() -> None:
-    current_env = _detect_conda_env()
+    expected_env_path = _expected_virtual_env_path()
+    current_env, current_env_path = _detect_virtual_env()
     print(f"[Runtime] Python: {sys.executable}")
-    print(f"[Runtime] Conda Env: {current_env or '未检测到'}")
-    if current_env and current_env != EXPECTED_CONDA_ENV:
+    print(f"[Runtime] Virtual Env: {current_env_path or '未检测到'}")
+    if current_env and not _is_expected_virtual_env(current_env_path):
         print(
-            f"[WARN] 当前环境为 '{current_env}'，推荐使用 '{EXPECTED_CONDA_ENV}' 启动，"
+            f"[WARN] 当前虚拟环境为 '{current_env}'，推荐使用 '{expected_env_path}' 启动，"
             "否则 Turnstile Solver 可能因依赖缺失而无法启动。"
         )
-    elif not current_env:
+    elif not current_env_path:
         print(
-            f"[WARN] 未检测到 conda 环境，推荐使用 '{EXPECTED_CONDA_ENV}' 启动，"
+            f"[WARN] 未检测到项目虚拟环境，推荐使用 '{expected_env_path}' 启动，"
             "否则 Turnstile Solver 可能因依赖缺失而无法启动。"
         )
 
