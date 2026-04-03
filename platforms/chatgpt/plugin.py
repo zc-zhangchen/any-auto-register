@@ -178,6 +178,8 @@ class ChatGPTPlatform(BasePlatform):
 
     def get_platform_actions(self) -> list:
         return [
+            {"id": "probe_local_status", "label": "探测本地状态", "params": []},
+            {"id": "sync_cliproxyapi_status", "label": "同步 CLIProxyAPI 状态", "params": []},
             {"id": "refresh_token", "label": "刷新 Token", "params": []},
             {
                 "id": "payment_link",
@@ -236,6 +238,50 @@ class ChatGPTPlatform(BasePlatform):
         a.session_token = extra.get("session_token", "")
         a.client_id = extra.get("client_id", "app_EMoamEEZ73f0CkXaXp7hrann")
         a.cookies = extra.get("cookies", "")
+        a.user_id = account.user_id
+
+        if action_id == "probe_local_status":
+            from platforms.chatgpt.status_probe import probe_local_chatgpt_status
+
+            probe_result = probe_local_chatgpt_status(a, proxy=proxy)
+            summary = (
+                f"认证={probe_result.get('auth', {}).get('state', 'unknown')}, "
+                f"订阅={probe_result.get('subscription', {}).get('plan', 'unknown')}, "
+                f"Codex={probe_result.get('codex', {}).get('state', 'unknown')}"
+            )
+            return {
+                "ok": True,
+                "data": {
+                    "message": f"本地状态探测完成：{summary}",
+                    "probe": probe_result,
+                },
+                "account_extra_patch": {
+                    "chatgpt_local": probe_result,
+                },
+            }
+
+        if action_id == "sync_cliproxyapi_status":
+            from services.cliproxyapi_sync import sync_chatgpt_cliproxyapi_status
+
+            sync_result = sync_chatgpt_cliproxyapi_status(a)
+            ok = bool(sync_result.get("uploaded")) and sync_result.get("remote_state") not in {"unreachable", "not_found"}
+            summary = (
+                f"远端状态={sync_result.get('status') or 'not_found'}, "
+                f"探测={sync_result.get('remote_state') or 'not_checked'}"
+            )
+            return {
+                "ok": ok,
+                "data": {
+                    "message": f"CLIProxyAPI 状态同步完成：{summary}",
+                    "sync": sync_result,
+                },
+                "error": sync_result.get("message") if not ok else "",
+                "account_extra_patch": {
+                    "sync_statuses": {
+                        "cliproxyapi": sync_result,
+                    },
+                },
+            }
 
         if action_id == "refresh_token":
             from platforms.chatgpt.token_refresh import TokenRefreshManager

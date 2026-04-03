@@ -12,6 +12,7 @@ import urllib.parse
 from typing import Optional
 
 from curl_cffi import requests as curl_requests
+from core.proxy_utils import build_requests_proxy_config
 
 from .oauth import (
     OAuthStart,
@@ -22,7 +23,9 @@ from .oauth import (
 
 AUTH_BASE = "https://auth.openai.com"
 SENTINEL_API = "https://sentinel.openai.com/backend-api/sentinel/req"
-SENTINEL_REFERER = "https://sentinel.openai.com/backend-api/sentinel/frame.html?sv=20260219f9f6"
+SENTINEL_REFERER = (
+    "https://sentinel.openai.com/backend-api/sentinel/frame.html?sv=20260219f9f6"
+)
 CLOUDFLARE_TRACE = "https://cloudflare.com/cdn-cgi/trace"
 
 
@@ -48,7 +51,7 @@ class OAuthPkceClient:
     def __init__(self, proxy: Optional[str] = None, log_fn=None):
         self.proxy = proxy
         self._log = log_fn or (lambda msg: None)
-        self._proxies = {"http": proxy, "https": proxy} if proxy else None
+        self._proxies = build_requests_proxy_config(self.proxy)
 
         # 主会话：贯穿整个注册 + 登录流程
         self.session = curl_requests.Session(
@@ -63,7 +66,9 @@ class OAuthPkceClient:
     # 内部方法：获取 Sentinel Token（极简模式）
     # ══════════════════════════════════════════════════════════════════
 
-    def _fetch_sentinel_token(self, device_id: str, flow: str = "authorize_continue") -> str:
+    def _fetch_sentinel_token(
+        self, device_id: str, flow: str = "authorize_continue"
+    ) -> str:
         """
         获取 Sentinel Token。
 
@@ -95,10 +100,16 @@ class OAuthPkceClient:
         if not c_value:
             raise RuntimeError("Sentinel 响应缺少 token 字段")
 
-        return json.dumps({
-            "p": "", "t": "", "c": c_value,
-            "id": device_id, "flow": flow,
-        }, separators=(",", ":"))
+        return json.dumps(
+            {
+                "p": "",
+                "t": "",
+                "c": c_value,
+                "id": device_id,
+                "flow": flow,
+            },
+            separators=(",", ":"),
+        )
 
     # ══════════════════════════════════════════════════════════════════
     # 步骤 1：检查 IP 地区
@@ -129,7 +140,11 @@ class OAuthPkceClient:
         self._log("访问 OAuth 授权 URL...")
         self.session.get(oauth.auth_url, timeout=15)
         self._device_id = self.session.cookies.get("oai-did") or ""
-        self._log(f"oai-did: {self._device_id[:16]}..." if self._device_id else "oai-did: (未获取到)")
+        self._log(
+            f"oai-did: {self._device_id[:16]}..."
+            if self._device_id
+            else "oai-did: (未获取到)"
+        )
         return oauth
 
     # ══════════════════════════════════════════════════════════════════
@@ -153,10 +168,12 @@ class OAuthPkceClient:
         if not self._sentinel:
             raise RuntimeError("Sentinel Token 未初始化")
 
-        payload = json.dumps({
-            "username": {"value": email, "kind": "email"},
-            "screen_hint": "signup",
-        })
+        payload = json.dumps(
+            {
+                "username": {"value": email, "kind": "email"},
+                "screen_hint": "signup",
+            }
+        )
         self._log(f"提交邮箱: {email}")
 
         resp = self.session.post(
@@ -171,7 +188,9 @@ class OAuthPkceClient:
             timeout=30,
         )
         if resp.status_code != 200:
-            raise RuntimeError(f"提交邮箱失败: HTTP {resp.status_code} {resp.text[:300]}")
+            raise RuntimeError(
+                f"提交邮箱失败: HTTP {resp.status_code} {resp.text[:300]}"
+            )
 
         data = resp.json()
         self._log(f"邮箱提交成功")
@@ -198,7 +217,9 @@ class OAuthPkceClient:
             timeout=30,
         )
         if resp.status_code != 200:
-            raise RuntimeError(f"提交密码失败: HTTP {resp.status_code} {resp.text[:300]}")
+            raise RuntimeError(
+                f"提交密码失败: HTTP {resp.status_code} {resp.text[:300]}"
+            )
 
         continue_url = resp.json().get("continue_url") or ""
         self._log(f"密码提交成功{', continue_url 已获取' if continue_url else ''}")
@@ -249,7 +270,9 @@ class OAuthPkceClient:
             timeout=30,
         )
         if resp.status_code != 200:
-            raise RuntimeError(f"OTP 验证失败: HTTP {resp.status_code} {resp.text[:300]}")
+            raise RuntimeError(
+                f"OTP 验证失败: HTTP {resp.status_code} {resp.text[:300]}"
+            )
         self._log("OTP 验证通过")
 
     # ══════════════════════════════════════════════════════════════════
@@ -271,7 +294,9 @@ class OAuthPkceClient:
             timeout=30,
         )
         if resp.status_code != 200:
-            raise RuntimeError(f"创建账户失败: HTTP {resp.status_code} {resp.text[:300]}")
+            raise RuntimeError(
+                f"创建账户失败: HTTP {resp.status_code} {resp.text[:300]}"
+            )
         self._log("账户创建成功")
 
     # ══════════════════════════════════════════════════════════════════
@@ -297,7 +322,11 @@ class OAuthPkceClient:
         login_oauth = generate_oauth_url()
         self.session.get(login_oauth.auth_url, timeout=15)
         login_did = self.session.cookies.get("oai-did") or self._device_id or ""
-        self._log(f"登录阶段 oai-did: {login_did[:16]}..." if login_did else "登录阶段 oai-did: (空)")
+        self._log(
+            f"登录阶段 oai-did: {login_did[:16]}..."
+            if login_did
+            else "登录阶段 oai-did: (空)"
+        )
 
         # 9-2. 获取登录阶段 Sentinel
         login_sentinel = self._fetch_sentinel_token(login_did)
@@ -311,10 +340,12 @@ class OAuthPkceClient:
                 "content-type": "application/json",
                 "openai-sentinel-token": login_sentinel,
             },
-            data=json.dumps({
-                "username": {"value": email, "kind": "email"},
-                "screen_hint": "login",
-            }),
+            data=json.dumps(
+                {
+                    "username": {"value": email, "kind": "email"},
+                    "screen_hint": "login",
+                }
+            ),
             timeout=30,
         )
         if login_email_resp.status_code != 200:
@@ -373,7 +404,9 @@ class OAuthPkceClient:
                 timeout=30,
             )
             if otp_resp.status_code != 200:
-                raise RuntimeError(f"登录二次 OTP 失败: HTTP {otp_resp.status_code} {otp_resp.text[:200]}")
+                raise RuntimeError(
+                    f"登录二次 OTP 失败: HTTP {otp_resp.status_code} {otp_resp.text[:200]}"
+                )
             self._log("登录二次验证通过")
 
         self._log("OAuth 登录流程完成")
@@ -423,7 +456,9 @@ class OAuthPkceClient:
             timeout=30,
         )
         if resp.status_code != 200:
-            raise RuntimeError(f"workspace/select 失败: HTTP {resp.status_code} {resp.text[:300]}")
+            raise RuntimeError(
+                f"workspace/select 失败: HTTP {resp.status_code} {resp.text[:300]}"
+            )
 
         continue_url = str((resp.json() or {}).get("continue_url") or "").strip()
         if not continue_url:

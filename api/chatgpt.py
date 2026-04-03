@@ -4,6 +4,7 @@ from sqlmodel import Session
 from pydantic import BaseModel
 from typing import Optional
 from core.db import AccountModel, get_session
+from services.chatgpt_account_state import apply_chatgpt_status_policy
 import json, sys
 
 
@@ -42,7 +43,19 @@ def _to_codex_account(acc: AccountModel):
     a.session_token = extra.get("session_token", "")
     a.client_id = extra.get("client_id", "app_EMoamEEZ73f0CkXaXp7hrann")
     a.cookies = extra.get("cookies", "")
+    a.user_id = acc.user_id
     return a
+
+
+def _persist_local_probe(acc: AccountModel, probe: dict, session: Session) -> None:
+    extra = acc.get_extra()
+    extra["chatgpt_local"] = probe
+    acc.set_extra(extra)
+    apply_chatgpt_status_policy(acc, local_probe=probe)
+    from datetime import datetime
+    acc.updated_at = datetime.utcnow()
+    session.add(acc)
+    session.commit()
 
 
 # ── Token 刷新 ──────────────────────────────────────────────
@@ -106,16 +119,28 @@ def check_subscription(account_id: int, proxy: Optional[str] = None,
     acc = _get_account(account_id, session)
     codex_acc = _to_codex_account(acc)
 
-    from platforms.chatgpt.payment import check_subscription_status
-    status = check_subscription_status(codex_acc, proxy=proxy)
+    from platforms.chatgpt.status_probe import probe_local_chatgpt_status
 
-    # 更新账号状态
-    acc.status = status
-    from datetime import datetime
-    acc.updated_at = datetime.utcnow()
-    session.add(acc)
-    session.commit()
-    return {"subscription": status, "email": acc.email}
+    probe = probe_local_chatgpt_status(codex_acc, proxy=proxy)
+    _persist_local_probe(acc, probe, session)
+    return {
+        "email": acc.email,
+        "subscription": probe.get("subscription", {}).get("plan", "unknown"),
+        "probe": probe,
+    }
+
+
+@router.post("/{account_id}/probe-local")
+def probe_local_status(account_id: int, proxy: Optional[str] = None,
+                       session: Session = Depends(get_session)):
+    acc = _get_account(account_id, session)
+    codex_acc = _to_codex_account(acc)
+
+    from platforms.chatgpt.status_probe import probe_local_chatgpt_status
+
+    probe = probe_local_chatgpt_status(codex_acc, proxy=proxy)
+    _persist_local_probe(acc, probe, session)
+    return {"ok": True, "email": acc.email, "probe": probe}
 
 
 # ── CPA 上传 ────────────────────────────────────────────────

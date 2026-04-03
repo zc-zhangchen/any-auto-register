@@ -1,7 +1,9 @@
 """代理池 - 从数据库读取代理，支持轮询和按区域选取"""
+
 from typing import Optional
 from sqlmodel import Session, select
 from .db import ProxyModel, engine
+from .proxy_utils import build_requests_proxy_config
 import time, threading, random
 from datetime import datetime, timezone
 
@@ -22,7 +24,7 @@ class ProxyPool:
                 return None
             proxies.sort(
                 key=lambda p: p.success_count / max(p.success_count + p.fail_count, 1),
-                reverse=True
+                reverse=True,
             )
             with self._lock:
                 idx = self._index % len(proxies)
@@ -53,14 +55,17 @@ class ProxyPool:
     def check_all(self) -> dict:
         """检测所有代理可用性"""
         import requests
+
         with Session(engine) as s:
             proxies = s.exec(select(ProxyModel)).all()
         results = {"ok": 0, "fail": 0}
         for p in proxies:
             try:
-                r = requests.get("https://httpbin.org/ip",
-                                 proxies={"http": p.url, "https": p.url},
-                                 timeout=8)
+                r = requests.get(
+                    "https://httpbin.org/ip",
+                    proxies=build_requests_proxy_config(p.url),
+                    timeout=8,
+                )
                 if r.status_code == 200:
                     self.report_success(p.url)
                     results["ok"] += 1

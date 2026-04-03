@@ -1,17 +1,21 @@
 """Cursor 注册协议核心实现"""
+
 import re, uuid, json, urllib.parse, random, string
 from typing import Optional, Callable
+from core.proxy_utils import build_requests_proxy_config
 
-AUTH   = "https://authenticator.cursor.sh"
+AUTH = "https://authenticator.cursor.sh"
 CURSOR = "https://cursor.com"
 
-ACTION_SUBMIT_EMAIL    = "d0b05a2a36fbe69091c2f49016138171d5c1e4cd"
+ACTION_SUBMIT_EMAIL = "d0b05a2a36fbe69091c2f49016138171d5c1e4cd"
 ACTION_SUBMIT_PASSWORD = "fef846a39073c935bea71b63308b177b113269b7"
-ACTION_MAGIC_CODE      = "f9e8ae3d58a7cd11cccbcdbf210e6f2a6a2550dd"
+ACTION_MAGIC_CODE = "f9e8ae3d58a7cd11cccbcdbf210e6f2a6a2550dd"
 
-UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-      "AppleWebKit/537.36 (KHTML, like Gecko) "
-      "Chrome/145.0.0.0 Safari/537.36")
+UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/145.0.0.0 Safari/537.36"
+)
 
 TURNSTILE_SITEKEY = "0x4AAAAAAAMNIvC45A4Wjjln"
 
@@ -23,7 +27,8 @@ def _rand_password(n=16):
 
 def _boundary():
     return "----WebKitFormBoundary" + "".join(
-        random.choices(string.ascii_letters + string.digits, k=16))
+        random.choices(string.ascii_letters + string.digits, k=16)
+    )
 
 
 def _multipart(fields: dict, boundary: str) -> bytes:
@@ -41,13 +46,18 @@ def _multipart(fields: dict, boundary: str) -> bytes:
 class CursorRegister:
     def __init__(self, proxy: str = None, log_fn: Callable = print):
         from curl_cffi import requests as curl_req
+
         self.log = log_fn
         self.s = curl_req.Session(impersonate="safari17_0")
         if proxy:
-            self.s.proxies = {"http": proxy, "https": proxy}
+            self.s.proxies = build_requests_proxy_config(proxy)
 
     def _base_headers(self, next_action, referer, boundary=None):
-        ct = f"multipart/form-data; boundary={boundary}" if boundary else "application/x-www-form-urlencoded"
+        ct = (
+            f"multipart/form-data; boundary={boundary}"
+            if boundary
+            else "application/x-www-form-urlencoded"
+        )
         return {
             "user-agent": UA,
             "accept": "text/x-component",
@@ -63,10 +73,12 @@ class CursorRegister:
         state = {"returnTo": "https://cursor.com/dashboard", "nonce": nonce}
         state_encoded = urllib.parse.quote(urllib.parse.quote(json.dumps(state)))
         url = f"{AUTH}/?state={state_encoded}"
-        self.s.get(url, headers={"user-agent": UA, "accept": "text/html"}, allow_redirects=True)
+        self.s.get(
+            url, headers={"user-agent": UA, "accept": "text/html"}, allow_redirects=True
+        )
         state_cookie_name = None
         for cookie in self.s.cookies.jar:
-            if 'state-' in cookie.name:
+            if "state-" in cookie.name:
                 state_cookie_name = cookie.name
                 break
         return state_encoded, state_cookie_name
@@ -75,40 +87,61 @@ class CursorRegister:
         bd = _boundary()
         referer = f"{AUTH}/sign-up?state={state_encoded}"
         body = _multipart({"1_state": state_encoded, "email": email}, bd)
-        self.s.post(f"{AUTH}/sign-up",
-                    headers=self._base_headers(ACTION_SUBMIT_EMAIL, referer, boundary=bd),
-                    data=body, allow_redirects=False)
+        self.s.post(
+            f"{AUTH}/sign-up",
+            headers=self._base_headers(ACTION_SUBMIT_EMAIL, referer, boundary=bd),
+            data=body,
+            allow_redirects=False,
+        )
 
     def step3_submit_password(self, password, email, state_encoded, yescaptcha_key=""):
         captcha_token = ""
         if yescaptcha_key:
             from core.base_captcha import YesCaptcha
+
             self.log("获取 Turnstile token...")
-            captcha_token = YesCaptcha(yescaptcha_key).solve_turnstile(AUTH, TURNSTILE_SITEKEY)
+            captcha_token = YesCaptcha(yescaptcha_key).solve_turnstile(
+                AUTH, TURNSTILE_SITEKEY
+            )
         bd = _boundary()
         referer = f"{AUTH}/sign-up?state={state_encoded}"
-        body = _multipart({
-            "1_state": state_encoded, "email": email,
-            "password": password, "captchaToken": captcha_token,
-        }, bd)
-        self.s.post(f"{AUTH}/sign-up",
-                    headers=self._base_headers(ACTION_SUBMIT_PASSWORD, referer, boundary=bd),
-                    data=body, allow_redirects=False)
+        body = _multipart(
+            {
+                "1_state": state_encoded,
+                "email": email,
+                "password": password,
+                "captchaToken": captcha_token,
+            },
+            bd,
+        )
+        self.s.post(
+            f"{AUTH}/sign-up",
+            headers=self._base_headers(ACTION_SUBMIT_PASSWORD, referer, boundary=bd),
+            data=body,
+            allow_redirects=False,
+        )
 
     def step4_submit_otp(self, otp, email, state_encoded):
         bd = _boundary()
         referer = f"{AUTH}/sign-up?state={state_encoded}"
         body = _multipart({"1_state": state_encoded, "email": email, "otp": otp}, bd)
-        r = self.s.post(f"{AUTH}/sign-up",
-                        headers=self._base_headers(ACTION_MAGIC_CODE, referer, boundary=bd),
-                        data=body, allow_redirects=False)
+        r = self.s.post(
+            f"{AUTH}/sign-up",
+            headers=self._base_headers(ACTION_MAGIC_CODE, referer, boundary=bd),
+            data=body,
+            allow_redirects=False,
+        )
         loc = r.headers.get("location", "")
-        m = re.search(r'code=([\w-]+)', loc)
+        m = re.search(r"code=([\w-]+)", loc)
         return m.group(1) if m else ""
 
     def step5_get_token(self, auth_code, state_encoded):
         url = f"{CURSOR}/api/auth/callback?code={auth_code}&state={state_encoded}"
-        self.s.get(url, headers={"user-agent": UA, "accept": "text/html"}, allow_redirects=False)
+        self.s.get(
+            url,
+            headers={"user-agent": UA, "accept": "text/html"},
+            allow_redirects=False,
+        )
         for cookie in self.s.cookies.jar:
             if cookie.name == "WorkosCursorSessionToken":
                 return urllib.parse.unquote(cookie.value)
@@ -118,9 +151,13 @@ class CursorRegister:
                 return urllib.parse.unquote(cookie.value)
         return ""
 
-    def register(self, email: str, password: str = None,
-                 otp_callback: Optional[Callable] = None,
-                 yescaptcha_key: str = "") -> dict:
+    def register(
+        self,
+        email: str,
+        password: str = None,
+        otp_callback: Optional[Callable] = None,
+        yescaptcha_key: str = "",
+    ) -> dict:
         if not password:
             password = _rand_password()
         self.log(f"邮箱: {email}")

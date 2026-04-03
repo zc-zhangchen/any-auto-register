@@ -4,6 +4,7 @@ quart>=0.19.4
 sqlmodel>=0.0.16
 curl_cffi>=0.6.0
 requests>=2.31.0
+pysocks>=1.7.1
 playwright>=1.43.0
 patchright>=1.52.5
 pydantic>=2.0.0

@@ -21,7 +21,8 @@ def _cleanup_old_tasks():
     """Remove oldest finished tasks when the dict grows too large."""
     with _tasks_lock:
         finished = [
-            (tid, t) for tid, t in _tasks.items()
+            (tid, t)
+            for tid, t in _tasks.items()
             if t.get("status") in ("done", "failed")
         ]
         if len(finished) <= MAX_FINISHED_TASKS:
@@ -56,7 +57,9 @@ def _prepare_register_request(req: RegisterTaskRequest) -> RegisterTaskRequest:
     req_data["extra"] = deepcopy(req_data.get("extra") or {})
     prepared = RegisterTaskRequest(**req_data)
 
-    mail_provider = prepared.extra.get("mail_provider") or config_store.get("mail_provider", "")
+    mail_provider = prepared.extra.get("mail_provider") or config_store.get(
+        "mail_provider", ""
+    )
     if mail_provider == "luckmail":
         platform = prepared.platform
         if platform in ("tavily", "openblocklabs"):
@@ -67,14 +70,16 @@ def _prepare_register_request(req: RegisterTaskRequest) -> RegisterTaskRequest:
             "cursor": "cursor",
             "grok": "grok",
             "kiro": "kiro",
-            "chatgpt": "openai"
+            "chatgpt": "openai",
         }
         prepared.extra["luckmail_project_code"] = mapping.get(platform, platform)
 
     return prepared
 
 
-def _create_task_record(task_id: str, req: RegisterTaskRequest, source: str, meta: dict | None = None):
+def _create_task_record(
+    task_id: str, req: RegisterTaskRequest, source: str, meta: dict | None = None
+):
     with _tasks_lock:
         _tasks[task_id] = {
             "id": task_id,
@@ -95,17 +100,21 @@ def enqueue_register_task(
     meta: dict | None = None,
 ) -> str:
     prepared = _prepare_register_request(req)
-    task_id = f"task_{int(time.time()*1000)}"
+    task_id = f"task_{int(time.time() * 1000)}"
     _create_task_record(task_id, prepared, source, meta)
     if background_tasks is None:
-        thread = threading.Thread(target=_run_register, args=(task_id, prepared), daemon=True)
+        thread = threading.Thread(
+            target=_run_register, args=(task_id, prepared), daemon=True
+        )
         thread.start()
     else:
         background_tasks.add_task(_run_register, task_id, prepared)
     return task_id
 
 
-def has_active_register_task(*, platform: str | None = None, source: str | None = None) -> bool:
+def has_active_register_task(
+    *, platform: str | None = None, source: str | None = None
+) -> bool:
     with _tasks_lock:
         for task in _tasks.values():
             if task.get("status") not in ("pending", "running"):
@@ -128,8 +137,9 @@ def _log(task_id: str, msg: str):
     print(entry)
 
 
-def _save_task_log(platform: str, email: str, status: str,
-                   error: str = "", detail: dict = None):
+def _save_task_log(
+    platform: str, email: str, status: str, error: str = "", detail: dict = None
+):
     """Write a TaskLog record to the database."""
     with Session(engine) as s:
         log = TaskLog(
@@ -162,6 +172,7 @@ def _run_register(task_id: str, req: RegisterTaskRequest):
     from core.base_platform import RegisterConfig
     from core.db import save_account
     from core.base_mailbox import create_mailbox
+    from core.proxy_utils import normalize_proxy_url
 
     with _tasks_lock:
         _tasks[task_id]["status"] = "running"
@@ -175,8 +186,11 @@ def _run_register(task_id: str, req: RegisterTaskRequest):
 
         def _build_mailbox(proxy: Optional[str]):
             from core.config_store import config_store
+
             merged_extra = config_store.get_all().copy()
-            merged_extra.update({k: v for k, v in req.extra.items() if v is not None and v != ""})
+            merged_extra.update(
+                {k: v for k, v in req.extra.items() if v is not None and v != ""}
+            )
             return create_mailbox(
                 provider=merged_extra.get("mail_provider", "laoudo"),
                 extra=merged_extra,
@@ -191,18 +205,25 @@ def _run_register(task_id: str, req: RegisterTaskRequest):
                 _proxy = req.proxy
                 if not _proxy:
                     _proxy = proxy_pool.get_next()
+                _proxy = normalize_proxy_url(_proxy)
                 if req.register_delay_seconds > 0:
                     with start_gate_lock:
                         now = time.time()
                         wait_seconds = max(0.0, next_start_time - now)
                         if wait_seconds > 0:
-                            _log(task_id, f"第 {i+1} 个账号启动前延迟 {wait_seconds:g} 秒")
+                            _log(
+                                task_id,
+                                f"第 {i + 1} 个账号启动前延迟 {wait_seconds:g} 秒",
+                            )
                             time.sleep(wait_seconds)
                         next_start_time = time.time() + req.register_delay_seconds
                 from core.config_store import config_store
+
                 merged_extra = config_store.get_all().copy()
-                merged_extra.update({k: v for k, v in req.extra.items() if v is not None and v != ""})
-                
+                merged_extra.update(
+                    {k: v for k, v in req.extra.items() if v is not None and v != ""}
+                )
+
                 _config = RegisterConfig(
                     executor_type=req.executor_type,
                     captcha_solver=req.captcha_solver,
@@ -215,9 +236,10 @@ def _run_register(task_id: str, req: RegisterTaskRequest):
                 if getattr(_platform, "mailbox", None) is not None:
                     _platform.mailbox._log_fn = _platform._log_fn
                 with _tasks_lock:
-                    _tasks[task_id]["progress"] = f"{i+1}/{req.count}"
-                _log(task_id, f"开始注册第 {i+1}/{req.count} 个账号")
-                if _proxy: _log(task_id, f"使用代理: {_proxy}")
+                    _tasks[task_id]["progress"] = f"{i + 1}/{req.count}"
+                _log(task_id, f"开始注册第 {i + 1}/{req.count} 个账号")
+                if _proxy:
+                    _log(task_id, f"使用代理: {_proxy}")
                 account = _platform.register(
                     email=req.email or None,
                     password=req.password,
@@ -231,15 +253,27 @@ def _run_register(task_id: str, req: RegisterTaskRequest):
                         if mailbox_token:
                             account.extra.setdefault("mailbox_token", mailbox_token)
                         if merged_extra.get("luckmail_project_code"):
-                            account.extra.setdefault("luckmail_project_code", merged_extra.get("luckmail_project_code"))
+                            account.extra.setdefault(
+                                "luckmail_project_code",
+                                merged_extra.get("luckmail_project_code"),
+                            )
                         if merged_extra.get("luckmail_email_type"):
-                            account.extra.setdefault("luckmail_email_type", merged_extra.get("luckmail_email_type"))
+                            account.extra.setdefault(
+                                "luckmail_email_type",
+                                merged_extra.get("luckmail_email_type"),
+                            )
                         if merged_extra.get("luckmail_domain"):
-                            account.extra.setdefault("luckmail_domain", merged_extra.get("luckmail_domain"))
+                            account.extra.setdefault(
+                                "luckmail_domain", merged_extra.get("luckmail_domain")
+                            )
                         if merged_extra.get("luckmail_base_url"):
-                            account.extra.setdefault("luckmail_base_url", merged_extra.get("luckmail_base_url"))
+                            account.extra.setdefault(
+                                "luckmail_base_url",
+                                merged_extra.get("luckmail_base_url"),
+                            )
                 saved_account = save_account(account)
-                if _proxy: proxy_pool.report_success(_proxy)
+                if _proxy:
+                    proxy_pool.report_success(_proxy)
                 _log(task_id, f"✓ 注册成功: {account.email}")
                 _save_task_log(req.platform, account.email, "success")
                 _auto_upload_integrations(task_id, saved_account or account)
@@ -247,15 +281,19 @@ def _run_register(task_id: str, req: RegisterTaskRequest):
                 if cashier_url:
                     _log(task_id, f"  [升级链接] {cashier_url}")
                     with _tasks_lock:
-                        _tasks[task_id].setdefault("cashier_urls", []).append(cashier_url)
+                        _tasks[task_id].setdefault("cashier_urls", []).append(
+                            cashier_url
+                        )
                 return True
             except Exception as e:
-                if _proxy: proxy_pool.report_fail(_proxy)
+                if _proxy:
+                    proxy_pool.report_fail(_proxy)
                 _log(task_id, f"✗ 注册失败: {e}")
                 _save_task_log(req.platform, req.email or "", "failed", error=str(e))
                 return str(e)
 
         from concurrent.futures import ThreadPoolExecutor, as_completed
+
         max_workers = min(req.concurrency, req.count, 5)
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
             futures = [pool.submit(_do_one, i) for i in range(req.count)]

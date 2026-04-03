@@ -254,7 +254,8 @@ def _do_check(account_id: int):
             with Session(engine) as s:
                 a = s.get(AccountModel, account_id)
                 if a:
-                    a.status = a.status if valid else "invalid"
+                    if a.platform != "chatgpt":
+                        a.status = a.status if valid else "invalid"
                     a.updated_at = datetime.now(timezone.utc)
                     s.add(a)
                     s.commit()

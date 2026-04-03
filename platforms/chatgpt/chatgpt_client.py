@@ -7,12 +7,14 @@ import random
 import uuid
 import time
 from urllib.parse import urlparse
+from core.proxy_utils import build_requests_proxy_config
 
 try:
     from curl_cffi import requests as curl_requests
 except ImportError:
     print("❌ 需要安装 curl_cffi: pip install curl_cffi")
     import sys
+
     sys.exit(1)
 
 from .sentinel_token import build_sentinel_token
@@ -32,18 +34,24 @@ from .utils import (
 # Chrome 指纹配置
 _CHROME_PROFILES = [
     {
-        "major": 131, "impersonate": "chrome131",
-        "build": 6778, "patch_range": (69, 205),
+        "major": 131,
+        "impersonate": "chrome131",
+        "build": 6778,
+        "patch_range": (69, 205),
         "sec_ch_ua": '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
     },
     {
-        "major": 133, "impersonate": "chrome133a",
-        "build": 6943, "patch_range": (33, 153),
+        "major": 133,
+        "impersonate": "chrome133a",
+        "build": 6943,
+        "patch_range": (33, 153),
         "sec_ch_ua": '"Not(A:Brand";v="99", "Google Chrome";v="133", "Chromium";v="133"',
     },
     {
-        "major": 136, "impersonate": "chrome136",
-        "build": 7103, "patch_range": (48, 175),
+        "major": 136,
+        "impersonate": "chrome136",
+        "build": 7103,
+        "patch_range": (48, 175),
         "sec_ch_ua": '"Chromium";v="136", "Google Chrome";v="136", "Not.A/Brand";v="99"',
     },
 ]
@@ -62,14 +70,14 @@ def _random_chrome_version():
 
 class ChatGPTClient:
     """ChatGPT 注册客户端"""
-    
+
     BASE = "https://chatgpt.com"
     AUTH = "https://auth.openai.com"
-    
+
     def __init__(self, proxy=None, verbose=True, browser_mode="protocol"):
         """
         初始化 ChatGPT 客户端
-        
+
         Args:
             proxy: 代理地址
             verbose: 是否输出详细日志
@@ -79,39 +87,49 @@ class ChatGPTClient:
         self.verbose = verbose
         self.browser_mode = browser_mode or "protocol"
         self.device_id = str(uuid.uuid4())
-        self.accept_language = random.choice([
-            "en-US,en;q=0.9",
-            "en-US,en;q=0.9,zh-CN;q=0.8",
-            "en,en-US;q=0.9",
-            "en-US,en;q=0.8",
-        ])
-        
+        self.accept_language = random.choice(
+            [
+                "en-US,en;q=0.9",
+                "en-US,en;q=0.9,zh-CN;q=0.8",
+                "en,en-US;q=0.9",
+                "en-US,en;q=0.8",
+            ]
+        )
+
         # 随机 Chrome 版本
-        self.impersonate, self.chrome_major, self.chrome_full, self.ua, self.sec_ch_ua = _random_chrome_version()
-        
+        (
+            self.impersonate,
+            self.chrome_major,
+            self.chrome_full,
+            self.ua,
+            self.sec_ch_ua,
+        ) = _random_chrome_version()
+
         # 创建 session
         self.session = curl_requests.Session(impersonate=self.impersonate)
-        
+
         if self.proxy:
-            self.session.proxies = {"http": self.proxy, "https": self.proxy}
-        
+            self.session.proxies = build_requests_proxy_config(self.proxy)
+
         # 设置基础 headers
-        self.session.headers.update({
-            "User-Agent": self.ua,
-            "Accept-Language": self.accept_language,
-            "sec-ch-ua": self.sec_ch_ua,
-            "sec-ch-ua-mobile": "?0",
-            "sec-ch-ua-platform": '"Windows"',
-            "sec-ch-ua-arch": '"x86"',
-            "sec-ch-ua-bitness": '"64"',
-            "sec-ch-ua-full-version": f'"{self.chrome_full}"',
-            "sec-ch-ua-platform-version": f'"{random.randint(10, 15)}.0.0"',
-        })
-        
+        self.session.headers.update(
+            {
+                "User-Agent": self.ua,
+                "Accept-Language": self.accept_language,
+                "sec-ch-ua": self.sec_ch_ua,
+                "sec-ch-ua-mobile": "?0",
+                "sec-ch-ua-platform": '"Windows"',
+                "sec-ch-ua-arch": '"x86"',
+                "sec-ch-ua-bitness": '"64"',
+                "sec-ch-ua-full-version": f'"{self.chrome_full}"',
+                "sec-ch-ua-platform-version": f'"{random.randint(10, 15)}.0.0"',
+            }
+        )
+
         # 设置 oai-did cookie
         seed_oai_device_cookie(self.session, self.device_id)
         self.last_registration_state = FlowState()
-    
+
     def _log(self, msg):
         """输出日志"""
         if self.verbose:
@@ -157,29 +175,39 @@ class ChatGPTClient:
     def _reset_session(self):
         """重置浏览器指纹与会话，用于绕过偶发的 Cloudflare/SPA 中间页。"""
         self.device_id = str(uuid.uuid4())
-        self.impersonate, self.chrome_major, self.chrome_full, self.ua, self.sec_ch_ua = _random_chrome_version()
-        self.accept_language = random.choice([
-            "en-US,en;q=0.9",
-            "en-US,en;q=0.9,zh-CN;q=0.8",
-            "en,en-US;q=0.9",
-            "en-US,en;q=0.8",
-        ])
+        (
+            self.impersonate,
+            self.chrome_major,
+            self.chrome_full,
+            self.ua,
+            self.sec_ch_ua,
+        ) = _random_chrome_version()
+        self.accept_language = random.choice(
+            [
+                "en-US,en;q=0.9",
+                "en-US,en;q=0.9,zh-CN;q=0.8",
+                "en,en-US;q=0.9",
+                "en-US,en;q=0.8",
+            ]
+        )
 
         self.session = curl_requests.Session(impersonate=self.impersonate)
         if self.proxy:
-            self.session.proxies = {"http": self.proxy, "https": self.proxy}
+            self.session.proxies = build_requests_proxy_config(self.proxy)
 
-        self.session.headers.update({
-            "User-Agent": self.ua,
-            "Accept-Language": self.accept_language,
-            "sec-ch-ua": self.sec_ch_ua,
-            "sec-ch-ua-mobile": "?0",
-            "sec-ch-ua-platform": '"Windows"',
-            "sec-ch-ua-arch": '"x86"',
-            "sec-ch-ua-bitness": '"64"',
-            "sec-ch-ua-full-version": f'"{self.chrome_full}"',
-            "sec-ch-ua-platform-version": f'"{random.randint(10, 15)}.0.0"',
-        })
+        self.session.headers.update(
+            {
+                "User-Agent": self.ua,
+                "Accept-Language": self.accept_language,
+                "sec-ch-ua": self.sec_ch_ua,
+                "sec-ch-ua-mobile": "?0",
+                "sec-ch-ua-platform": '"Windows"',
+                "sec-ch-ua-arch": '"x86"',
+                "sec-ch-ua-bitness": '"64"',
+                "sec-ch-ua-full-version": f'"{self.chrome_full}"',
+                "sec-ch-ua-platform-version": f'"{random.randint(10, 15)}.0.0"',
+            }
+        )
         seed_oai_device_cookie(self.session, self.device_id)
 
     def _state_from_url(self, url, method="GET"):
@@ -214,7 +242,11 @@ class ChatGPTClient:
         return (
             page_type in {"callback", "chatgpt_home", "oauth_callback"}
             or ("chatgpt.com" in current_url and "redirect_uri" not in current_url)
-            or ("chatgpt.com" in continue_url and "redirect_uri" not in continue_url and page_type != "external_url")
+            or (
+                "chatgpt.com" in continue_url
+                and "redirect_uri" not in continue_url
+                and page_type != "external_url"
+            )
         )
 
     def _state_is_password_registration(self, state: FlowState):
@@ -222,7 +254,11 @@ class ChatGPTClient:
 
     def _state_is_email_otp(self, state: FlowState):
         target = f"{state.continue_url} {state.current_url}".lower()
-        return state.page_type == "email_otp_verification" or "email-verification" in target or "email-otp" in target
+        return (
+            state.page_type == "email_otp_verification"
+            or "email-verification" in target
+            or "email-otp" in target
+        )
 
     def _state_is_about_you(self, state: FlowState):
         target = f"{state.continue_url} {state.current_url}".lower()
@@ -262,7 +298,9 @@ class ChatGPTClient:
             content_type = (r.headers.get("content-type", "") or "").lower()
             if "application/json" in content_type:
                 try:
-                    next_state = self._state_from_payload(r.json(), current_url=final_url)
+                    next_state = self._state_from_payload(
+                        r.json(), current_url=final_url
+                    )
                 except Exception:
                     next_state = self._state_from_url(final_url)
             else:
@@ -347,7 +385,9 @@ class ChatGPTClient:
 
         session_data = session_or_error
         access_token = str(session_data.get("accessToken") or "").strip()
-        session_token = str(session_data.get("sessionToken") or session_cookie or "").strip()
+        session_token = str(
+            session_data.get("sessionToken") or session_cookie or ""
+        ).strip()
         user = session_data.get("user") or {}
         account = session_data.get("account") or {}
         jwt_payload = decode_jwt_payload(access_token)
@@ -382,7 +422,7 @@ class ChatGPTClient:
         if user_id:
             self._log(f"Session User ID: {user_id}")
         return True, normalized
-    
+
     def visit_homepage(self):
         """访问首页，建立 session"""
         self._log("访问 ChatGPT 首页...")
@@ -403,7 +443,7 @@ class ChatGPTClient:
         except Exception as e:
             self._log(f"访问首页失败: {e}")
             return False
-    
+
     def get_csrf_token(self):
         """获取 CSRF token"""
         self._log("获取 CSRF token...")
@@ -419,7 +459,7 @@ class ChatGPTClient:
                 ),
                 timeout=30,
             )
-            
+
             if r.status_code == 200:
                 data = r.json()
                 token = data.get("csrfToken", "")
@@ -428,19 +468,19 @@ class ChatGPTClient:
                     return token
         except Exception as e:
             self._log(f"获取 CSRF token 失败: {e}")
-        
+
         return None
-    
+
     def signin(self, email, csrf_token):
         """
         提交邮箱，获取 authorize URL
-        
+
         Returns:
             str: authorize URL
         """
         self._log(f"提交邮箱: {email}")
         url = f"{self.BASE}/api/auth/signin/openai"
-        
+
         params = {
             "prompt": "login",
             "ext-oai-did": self.device_id,
@@ -448,7 +488,7 @@ class ChatGPTClient:
             "screen_hint": "login_or_signup",
             "login_hint": email,
         }
-        
+
         form_data = {
             "callbackUrl": f"{self.BASE}/",
             "csrfToken": csrf_token,
@@ -469,9 +509,9 @@ class ChatGPTClient:
                     content_type="application/x-www-form-urlencoded",
                     fetch_site="same-origin",
                 ),
-                timeout=30
+                timeout=30,
             )
-            
+
             if r.status_code == 200:
                 data = r.json()
                 authorize_url = data.get("url", "")
@@ -480,21 +520,23 @@ class ChatGPTClient:
                     return authorize_url
         except Exception as e:
             self._log(f"提交邮箱失败: {e}")
-        
+
         return None
-    
+
     def authorize(self, url, max_retries=3):
         """
         访问 authorize URL，跟随重定向（带重试机制）
         这是关键步骤，建立 auth.openai.com 的 session
-        
+
         Returns:
             str: 最终重定向的 URL
         """
         for attempt in range(max_retries):
             try:
                 if attempt > 0:
-                    self._log(f"访问 authorize URL... (尝试 {attempt + 1}/{max_retries})")
+                    self._log(
+                        f"访问 authorize URL... (尝试 {attempt + 1}/{max_retries})"
+                    )
                     time.sleep(1)  # 重试前等待
                 else:
                     self._log("访问 authorize URL...")
@@ -511,24 +553,30 @@ class ChatGPTClient:
                     allow_redirects=True,
                     timeout=30,
                 )
-                
+
                 final_url = str(r.url)
                 self._log(f"重定向到: {final_url}")
                 return final_url
-                
+
             except Exception as e:
                 error_msg = str(e)
-                is_tls_error = "TLS" in error_msg or "SSL" in error_msg or "curl: (35)" in error_msg
-                
+                is_tls_error = (
+                    "TLS" in error_msg
+                    or "SSL" in error_msg
+                    or "curl: (35)" in error_msg
+                )
+
                 if is_tls_error and attempt < max_retries - 1:
-                    self._log(f"Authorize TLS 错误 (尝试 {attempt + 1}/{max_retries}): {error_msg[:100]}")
+                    self._log(
+                        f"Authorize TLS 错误 (尝试 {attempt + 1}/{max_retries}): {error_msg[:100]}"
+                    )
                     continue
                 else:
                     self._log(f"Authorize 失败: {e}")
                     return ""
-        
+
         return ""
-    
+
     def callback(self, callback_url=None, referer=None):
         """完成注册回调"""
         self._log("执行回调...")
@@ -538,17 +586,17 @@ class ChatGPTClient:
             referer=referer or f"{self.AUTH}/about-you",
         )
         return ok
-    
+
     def register_user(self, email, password):
         """
         注册用户（邮箱 + 密码）
-        
+
         Returns:
             tuple: (success, message)
         """
         self._log(f"注册用户: {email}")
         url = f"{self.AUTH}/api/accounts/user/register"
-        
+
         headers = self._headers(
             url,
             accept="application/json",
@@ -558,16 +606,16 @@ class ChatGPTClient:
             fetch_site="same-origin",
         )
         headers.update(generate_datadog_trace())
-        
+
         payload = {
             "username": email,
             "password": password,
         }
-        
+
         try:
             self._browser_pause()
             r = self.session.post(url, json=payload, headers=headers, timeout=30)
-            
+
             if r.status_code == 200:
                 data = r.json()
                 self._log("注册成功")
@@ -580,11 +628,11 @@ class ChatGPTClient:
                     error_msg = r.text[:200]
                 self._log(f"注册失败: {r.status_code} - {error_msg}")
                 return False, f"HTTP {r.status_code}: {error_msg}"
-                
+
         except Exception as e:
             self._log(f"注册异常: {e}")
             return False, str(e)
-    
+
     def send_email_otp(self):
         """触发发送邮箱验证码"""
         self._log("触发发送验证码...")
@@ -607,20 +655,20 @@ class ChatGPTClient:
         except Exception as e:
             self._log(f"发送验证码失败: {e}")
             return False
-    
+
     def verify_email_otp(self, otp_code, return_state=False):
         """
         验证邮箱 OTP 码
-        
+
         Args:
             otp_code: 6位验证码
-            
+
         Returns:
             tuple: (success, message)
         """
         self._log(f"验证 OTP 码: {otp_code}")
         url = f"{self.AUTH}/api/accounts/email-otp/validate"
-        
+
         headers = self._headers(
             url,
             accept="application/json",
@@ -630,39 +678,41 @@ class ChatGPTClient:
             fetch_site="same-origin",
         )
         headers.update(generate_datadog_trace())
-        
+
         payload = {"code": otp_code}
-        
+
         try:
             self._browser_pause()
             r = self.session.post(url, json=payload, headers=headers, timeout=30)
-            
+
             if r.status_code == 200:
                 try:
                     data = r.json()
                 except Exception:
                     data = {}
-                next_state = self._state_from_payload(data, current_url=str(r.url) or f"{self.AUTH}/about-you")
+                next_state = self._state_from_payload(
+                    data, current_url=str(r.url) or f"{self.AUTH}/about-you"
+                )
                 self._log(f"验证成功 {describe_flow_state(next_state)}")
                 return (True, next_state) if return_state else (True, "验证成功")
             else:
                 error_msg = r.text[:200]
                 self._log(f"验证失败: {r.status_code} - {error_msg}")
                 return False, f"HTTP {r.status_code}"
-                
+
         except Exception as e:
             self._log(f"验证异常: {e}")
             return False, str(e)
-    
+
     def create_account(self, first_name, last_name, birthdate, return_state=False):
         """
         完成账号创建（提交姓名和生日）
-        
+
         Args:
             first_name: 名
             last_name: 姓
             birthdate: 生日 (YYYY-MM-DD)
-            
+
         Returns:
             tuple: (success, message)
         """
@@ -682,7 +732,7 @@ class ChatGPTClient:
             self._log("create_account: 已生成 sentinel token")
         else:
             self._log("create_account: 未生成 sentinel token，降级继续请求")
-        
+
         headers = self._headers(
             url,
             accept="application/json",
@@ -697,37 +747,41 @@ class ChatGPTClient:
         if sentinel_token:
             headers["openai-sentinel-token"] = sentinel_token
         headers.update(generate_datadog_trace())
-        
+
         payload = {
             "name": name,
             "birthdate": birthdate,
         }
-        
+
         try:
             self._browser_pause()
             r = self.session.post(url, json=payload, headers=headers, timeout=30)
-            
+
             if r.status_code == 200:
                 try:
                     data = r.json()
                 except Exception:
                     data = {}
-                next_state = self._state_from_payload(data, current_url=str(r.url) or self.BASE)
+                next_state = self._state_from_payload(
+                    data, current_url=str(r.url) or self.BASE
+                )
                 self._log(f"账号创建成功 {describe_flow_state(next_state)}")
                 return (True, next_state) if return_state else (True, "账号创建成功")
             else:
                 error_msg = r.text[:200]
                 self._log(f"创建失败: {r.status_code} - {error_msg}")
                 return False, f"HTTP {r.status_code}"
-                
+
         except Exception as e:
             self._log(f"创建异常: {e}")
             return False, str(e)
-    
-    def register_complete_flow(self, email, password, first_name, last_name, birthdate, skymail_client):
+
+    def register_complete_flow(
+        self, email, password, first_name, last_name, birthdate, skymail_client
+    ):
         """
         完整的注册流程（基于原版 run_register 方法）
-        
+
         Args:
             email: 邮箱
             password: 密码
@@ -735,12 +789,12 @@ class ChatGPTClient:
             last_name: 姓
             birthdate: 生日
             skymail_client: Skymail 客户端（用于获取验证码）
-            
+
         Returns:
             tuple: (success, message)
         """
         from urllib.parse import urlparse
-        
+
         max_auth_attempts = 3
         final_url = ""
         final_path = ""
@@ -782,13 +836,15 @@ class ChatGPTClient:
 
             # /api/accounts/authorize 实际上常对应 Cloudflare 403 中间页，不要继续走 authorize_continue。
             if "api/accounts/authorize" in final_path or final_path == "/error":
-                self._log(f"检测到 Cloudflare/SPA 中间页，准备重试预授权: {final_url[:160]}...")
+                self._log(
+                    f"检测到 Cloudflare/SPA 中间页，准备重试预授权: {final_url[:160]}..."
+                )
                 if auth_attempt < max_auth_attempts - 1:
                     continue
                 return False, f"预授权被拦截: {final_path}"
 
             break
-        
+
         state = self._state_from_url(final_url)
         self._log(f"注册状态起点: {describe_flow_state(state)}")
 
@@ -862,8 +918,14 @@ class ChatGPTClient:
                 self.last_registration_state = state
                 continue
 
-            if (not register_submitted) and (not otp_verified) and (not account_created):
-                self._log(f"未知起始状态，回退为全新注册流程: {describe_flow_state(state)}")
+            if (
+                (not register_submitted)
+                and (not otp_verified)
+                and (not account_created)
+            ):
+                self._log(
+                    f"未知起始状态，回退为全新注册流程: {describe_flow_state(state)}"
+                )
                 state = self._state_from_url(f"{self.AUTH}/create-account/password")
                 continue
 

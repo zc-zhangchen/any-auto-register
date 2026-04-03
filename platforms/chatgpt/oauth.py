@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 from curl_cffi import requests as cffi_requests
+from core.proxy_utils import build_requests_proxy_config
 
 from .constants import (
     OAUTH_CLIENT_ID,
@@ -123,10 +124,7 @@ def _to_int(v: Any) -> int:
 
 
 def _post_form(
-    url: str,
-    data: Dict[str, str],
-    timeout: int = 30,
-    proxy_url: Optional[str] = None
+    url: str, data: Dict[str, str], timeout: int = 30, proxy_url: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     发送 POST 表单请求
@@ -141,18 +139,13 @@ def _post_form(
         响应 JSON 数据
     """
     # 构建代理配置
-    proxies = None
-    if proxy_url:
-        proxies = {
-            "http": proxy_url,
-            "https": proxy_url,
-        }
+    proxies = build_requests_proxy_config(proxy_url)
 
     headers = {
         "Content-Type": "application/x-www-form-urlencoded",
         "Accept": "application/json",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     }
 
     try:
@@ -163,7 +156,7 @@ def _post_form(
             headers=headers,
             timeout=timeout,
             proxies=proxies,
-            impersonate="chrome"
+            impersonate="chrome",
         )
 
         if response.status_code != 200:
@@ -180,6 +173,7 @@ def _post_form(
 @dataclass(frozen=True)
 class OAuthStart:
     """OAuth 开始信息"""
+
     auth_url: str
     state: str
     code_verifier: str
@@ -190,7 +184,7 @@ def generate_oauth_url(
     *,
     redirect_uri: str = OAUTH_REDIRECT_URI,
     scope: str = OAUTH_SCOPE,
-    client_id: str = OAUTH_CLIENT_ID
+    client_id: str = OAUTH_CLIENT_ID,
 ) -> OAuthStart:
     """
     生成 OAuth 授权 URL
@@ -236,7 +230,7 @@ def submit_callback_url(
     redirect_uri: str = OAUTH_REDIRECT_URI,
     client_id: str = OAUTH_CLIENT_ID,
     token_url: str = OAUTH_TOKEN_URL,
-    proxy_url: Optional[str] = None
+    proxy_url: Optional[str] = None,
 ) -> str:
     """
     处理 OAuth 回调 URL，获取访问令牌
@@ -278,7 +272,7 @@ def submit_callback_url(
             "redirect_uri": redirect_uri,
             "code_verifier": code_verifier,
         },
-        proxy_url=proxy_url
+        proxy_url=proxy_url,
     )
 
     access_token = (token_resp.get("access_token") or "").strip()
@@ -321,7 +315,7 @@ class OAuthManager:
         token_url: str = OAUTH_TOKEN_URL,
         redirect_uri: str = OAUTH_REDIRECT_URI,
         scope: str = OAUTH_SCOPE,
-        proxy_url: Optional[str] = None
+        proxy_url: Optional[str] = None,
     ):
         self.client_id = client_id
         self.auth_url = auth_url
@@ -333,16 +327,11 @@ class OAuthManager:
     def start_oauth(self) -> OAuthStart:
         """开始 OAuth 流程"""
         return generate_oauth_url(
-            redirect_uri=self.redirect_uri,
-            scope=self.scope,
-            client_id=self.client_id
+            redirect_uri=self.redirect_uri, scope=self.scope, client_id=self.client_id
         )
 
     def handle_callback(
-        self,
-        callback_url: str,
-        expected_state: str,
-        code_verifier: str
+        self, callback_url: str, expected_state: str, code_verifier: str
     ) -> Dict[str, Any]:
         """处理 OAuth 回调"""
         result_json = submit_callback_url(
@@ -352,7 +341,7 @@ class OAuthManager:
             redirect_uri=self.redirect_uri,
             client_id=self.client_id,
             token_url=self.token_url,
-            proxy_url=self.proxy_url
+            proxy_url=self.proxy_url,
         )
         return json.loads(result_json)
 
@@ -363,8 +352,4 @@ class OAuthManager:
         auth_claims = claims.get("https://api.openai.com/auth") or {}
         account_id = str(auth_claims.get("chatgpt_account_id") or "").strip()
 
-        return {
-            "email": email,
-            "account_id": account_id,
-            "claims": claims
-        }
+        return {"email": email, "account_id": account_id, "claims": claims}
