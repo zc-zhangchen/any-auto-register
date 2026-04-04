@@ -27,6 +27,15 @@ class OutlookBatchImportResponse(BaseModel):
     errors: List[str]
 
 
+@router.get("/count")
+def get_outlook_count():
+    """返回 Outlook 邮箱总数"""
+    with Session(engine) as session:
+        from sqlmodel import func
+        count = session.exec(select(func.count()).select_from(OutlookAccountModel)).one()
+        return {"count": count}
+
+
 @router.post("/batch-import", response_model=OutlookBatchImportResponse)
 def batch_import_outlook(request: OutlookBatchImportRequest):
     """
