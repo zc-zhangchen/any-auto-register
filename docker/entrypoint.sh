@@ -18,4 +18,7 @@ ln -sfn "${RUNTIME_DIR}/smstome_uk_deep_numbers.txt" "${APP_DIR}/smstome_uk_deep
 ln -sfn "${RUNTIME_DIR}/logs/solver.log" "${APP_DIR}/services/turnstile_solver/solver.log"
 
 echo "[entrypoint] Starting backend under Xvfb so Docker can handle both headed and headless browser tasks"
-exec xvfb-run -a --server-args="-screen 0 1920x1080x24" python main.py
+echo "[entrypoint] Python version: $(python --version)"
+echo "[entrypoint] Starting application..."
+exec xvfb-run -a --server-args="-screen 0 1920x1080x24" python main.py 2>&1
+
