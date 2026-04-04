@@ -2946,6 +2946,9 @@ class OAuthClient:
         """处理 OAuth 阶段的邮箱 OTP 验证，返回服务端声明的下一步状态。"""
         self._enter_stage("otp", f"email={email}")
         self._log("步骤4: 检测到邮箱 OTP 验证")
+        # 记录 OTP 发送时间基线——必须在 sentinel token 等耗时操作之前，
+        # 否则邮件 created_at 会早于 otp_cutoff 导致验证码被误判为旧邮件。
+        _otp_sent_at_baseline = time.time()
 
         def _resend_email_otp() -> bool:
             prefer_passwordless = bool(
@@ -3102,8 +3105,8 @@ class OAuthClient:
             otp_resend_wait_seconds = 45 if prefer_passwordless_login else 120
         otp_resend_wait_seconds = max(30, min(otp_resend_wait_seconds, 900))
         otp_deadline = time.time() + otp_wait_seconds
-        otp_sent_at = time.time()
-        next_resend_at = otp_sent_at + otp_resend_wait_seconds
+        otp_sent_at = _otp_sent_at_baseline
+        next_resend_at = time.time() + otp_resend_wait_seconds
         self._log(
             f"OAuth OTP 等待窗口: total={otp_wait_seconds}s, poll_window={otp_poll_window}s"
         )
