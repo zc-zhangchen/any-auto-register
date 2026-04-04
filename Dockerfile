@@ -70,6 +70,4 @@ RUN apt-get update && apt-get install -y --no-install-recommends dos2unix git ip
 
 EXPOSE 8000 8889
 
-VOLUME ["/runtime", "/_ext_targets"]
-
 ENTRYPOINT ["/app/docker/entrypoint.sh"]
