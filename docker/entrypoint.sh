@@ -20,5 +20,8 @@ ln -sfn "${RUNTIME_DIR}/logs/solver.log" "${APP_DIR}/services/turnstile_solver/s
 echo "[entrypoint] Starting backend under Xvfb so Docker can handle both headed and headless browser tasks"
 echo "[entrypoint] Python version: $(python --version)"
 echo "[entrypoint] Starting application..."
-exec xvfb-run -a --server-args="-screen 0 1920x1080x24" python main.py 2>&1
+xvfb-run -a --server-args="-screen 0 1920x1080x24" python main.py 2>&1 || {
+  echo "[ERROR] Application failed with exit code $?"
+  exit 1
+}
 
