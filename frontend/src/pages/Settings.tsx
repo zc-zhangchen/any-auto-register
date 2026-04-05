@@ -23,6 +23,7 @@ const SELECT_FIELDS: Record<string, { label: string; value: string }[]> = {
     { label: 'AppleMail（小苹果 / 本地邮箱池）', value: 'applemail' },
     { label: 'Laoudo（固定邮箱）', value: 'laoudo' },
     { label: 'TempMail.lol（自动生成）', value: 'tempmail_lol' },
+    { label: 'TempMail.org（自动生成）', value: 'tempmailorg' },
     { label: 'SkyMail（CloudMail 接口）', value: 'skymail' },
     { label: 'CloudMail（genToken 口令模式）', value: 'cloudmail' },
     { label: 'DuckMail（自动生成）', value: 'duckmail' },
@@ -175,6 +176,13 @@ const TAB_ITEMS = [
         title: 'TempMail.lol',
         desc: '自动生成邮箱，无需配置，需要代理访问（CN IP 被封）',
         fields: [],
+      },
+      {
+        title: 'TempMail.org',
+        desc: '对接 web2.temp-mail.org 的旧版 Web API，创建邮箱后使用 Bearer token 轮询消息',
+        fields: [
+          { key: 'tempmailorg_api_url', label: 'API URL', placeholder: 'https://web2.temp-mail.org' },
+        ],
       },
       {
         title: 'DuckMail',
@@ -1682,6 +1690,9 @@ export default function Settings() {
       }
       if (!data.gptmail_base_url) {
         data.gptmail_base_url = 'https://mail.chatgpt.org.uk'
+      }
+      if (!data.tempmailorg_api_url) {
+        data.tempmailorg_api_url = 'https://web2.temp-mail.org'
       }
       if (!data.maliapi_base_url) {
         data.maliapi_base_url = 'https://maliapi.215.im/v1'
