@@ -145,6 +145,7 @@ class BaseMailbox(ABC):
     def get_current_ids(self, account: MailboxAccount) -> set:
         """返回当前邮件 ID 集合（用于过滤旧邮件）"""
         ...
+
     def _yyds_safe_extract(self, text: str, pattern: str = None) -> Optional[str]:
         """通用验证码提取逻辑：若有捕获组则返回 group(1)，否则返回 group(0)"""
         import re
@@ -188,15 +189,17 @@ class BaseMailbox(ABC):
         text = str(raw or "")
         if not text:
             return ""
-            
+
         # [修复点 4]：只有在明确包含常见邮件 Header 时，才进行 \r\n\r\n 切分。
         # 否则会误删 MaliAPI 等直接返回的已解析 JSON 正文内容（遇到普通的正文换行就错误截断了）
-        if re.search(r"(?im)^(?:Return-Path|Received|Date|From|To|Subject|Content-Type):", text):
+        if re.search(
+            r"(?im)^(?:Return-Path|Received|Date|From|To|Subject|Content-Type):", text
+        ):
             if "\r\n\r\n" in text:
                 text = text.split("\r\n\r\n", 1)[1]
             elif "\n\n" in text:
                 text = text.split("\n\n", 1)[1]
-                
+
         try:
             # 处理 Quoted-Printable
             decoded_bytes = quopri.decodestring(text)
@@ -212,6 +215,7 @@ class BaseMailbox(ABC):
         text = re.sub(r"\s+", " ", text).strip()
         return text
 
+
 def create_mailbox(
     provider: str, extra: dict = None, proxy: str = None
 ) -> "BaseMailbox":
@@ -219,6 +223,11 @@ def create_mailbox(
     extra = extra or {}
     if provider == "tempmail_lol":
         return TempMailLolMailbox(proxy=proxy)
+    elif provider == "tempmailorg":
+        return TempMailOrgMailbox(
+            api_url=extra.get("tempmailorg_api_url", "https://web2.temp-mail.org"),
+            proxy=proxy,
+        )
     elif provider == "skymail":
         return SkyMailMailbox(
             api_base=extra.get("skymail_api_base", "https://api.skymail.ink"),
@@ -233,9 +242,7 @@ def create_mailbox(
         except (TypeError, ValueError):
             timeout_value = 30
         return CloudMailMailbox(
-            api_base=extra.get("cloudmail_api_base")
-            or extra.get("base_url")
-            or "",
+            api_base=extra.get("cloudmail_api_base") or extra.get("base_url") or "",
             admin_email=extra.get("cloudmail_admin_email")
             or extra.get("admin_email")
             or "",
@@ -244,9 +251,7 @@ def create_mailbox(
             or extra.get("api_key")
             or "",
             domain=extra.get("cloudmail_domain") or extra.get("domain") or "",
-            subdomain=extra.get("cloudmail_subdomain")
-            or extra.get("subdomain")
-            or "",
+            subdomain=extra.get("cloudmail_subdomain") or extra.get("subdomain") or "",
             timeout=timeout_value,
             proxy=proxy,
         )
@@ -447,7 +452,16 @@ class AppleMailMailbox(BaseMailbox):
         if isinstance(payload, list):
             return [item for item in payload if isinstance(item, dict)]
         if isinstance(payload, dict):
-            for key in ("data", "result", "results", "messages", "mails", "emails", "items", "list"):
+            for key in (
+                "data",
+                "result",
+                "results",
+                "messages",
+                "mails",
+                "emails",
+                "items",
+                "list",
+            ):
                 if key in payload:
                     nested = AppleMailMailbox._unwrap_message_payload(payload.get(key))
                     if nested:
@@ -538,7 +552,9 @@ class AppleMailMailbox(BaseMailbox):
 
         result = []
         seen = set()
-        for mailbox in ([account_mailbox] if account_mailbox else []) + list(self.mailboxes):
+        for mailbox in ([account_mailbox] if account_mailbox else []) + list(
+            self.mailboxes
+        ):
             name = str(mailbox or "").strip()
             if not name or name in seen:
                 continue
@@ -546,7 +562,9 @@ class AppleMailMailbox(BaseMailbox):
             result.append(name)
         return result or ["INBOX"]
 
-    def _build_request_payload(self, account: MailboxAccount, mailbox: str) -> dict[str, Any]:
+    def _build_request_payload(
+        self, account: MailboxAccount, mailbox: str
+    ) -> dict[str, Any]:
         extra = account.extra or {}
         refresh_token = str(extra.get("refresh_token") or "").strip()
         client_id = str(extra.get("client_id") or "").strip()
@@ -560,7 +578,9 @@ class AppleMailMailbox(BaseMailbox):
             "mailbox": mailbox,
         }
 
-    def _list_messages(self, account: MailboxAccount, mailbox: str) -> list[dict[str, Any]]:
+    def _list_messages(
+        self, account: MailboxAccount, mailbox: str
+    ) -> list[dict[str, Any]]:
         data = self._request_json(
             "GET",
             "/api/mail-all",
@@ -607,8 +627,7 @@ class AppleMailMailbox(BaseMailbox):
             except Exception:
                 continue
             ids.update(
-                self._resolve_message_id(message, mailbox)
-                for message in messages
+                self._resolve_message_id(message, mailbox) for message in messages
             )
         return ids
 
@@ -920,6 +939,260 @@ class TempMailLolMailbox(BaseMailbox):
                         continue
                     code = self._safe_extract(text, code_pattern)
                     if code:
+                        return code
+            except Exception:
+                pass
+            return None
+
+        return self._run_polling_wait(
+            timeout=timeout,
+            poll_interval=3,
+            poll_once=poll_once,
+        )
+
+
+class TempMailOrgMailbox(BaseMailbox):
+    _MAILBOX_CREATE_DELAYS = (1.0, 2.0, 4.0)
+
+    def __init__(self, api_url: str = "https://web2.temp-mail.org", proxy: str = None):
+        self.api = (api_url or "https://web2.temp-mail.org").rstrip("/")
+        self.proxy = build_requests_proxy_config(proxy)
+
+    @staticmethod
+    def _base_headers() -> dict[str, str]:
+        return {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Origin": "https://web2.temp-mail.org",
+            "Referer": "https://web2.temp-mail.org",
+        }
+
+    def _headers(self, token: str = "") -> dict[str, str]:
+        headers = dict(self._base_headers())
+        if token:
+            headers["Cache-Control"] = "no-cache"
+            headers["Authorization"] = f"Bearer {token}"
+        return headers
+
+    def _request_json(
+        self,
+        method: str,
+        path: str,
+        *,
+        token: str = "",
+        timeout: int,
+    ) -> tuple[Any, Any]:
+        import requests
+
+        response = requests.request(
+            method,
+            f"{self.api}{path}",
+            params=None,
+            json=None,
+            headers=self._headers(token),
+            proxies=self.proxy,
+            timeout=timeout,
+            verify=False,
+        )
+        try:
+            payload = response.json()
+        except Exception as exc:
+            preview = (response.text or "")[:200]
+            raise RuntimeError(
+                f"TempMail.org API {path} 返回非 JSON: HTTP {response.status_code} {preview}"
+            ) from exc
+
+        if response.status_code >= 400:
+            error_name = ""
+            if isinstance(payload, dict):
+                message = (
+                    payload.get("errorMessage")
+                    or payload.get("message")
+                    or payload.get("error")
+                    or response.text
+                )
+                error_name = str(payload.get("errorName") or "").strip()
+            else:
+                message = response.text
+            if error_name:
+                message = f"{str(message or '').strip()} ({error_name})".strip()
+            error = RuntimeError(
+                f"TempMail.org API {path} 失败: {str(message or f'HTTP {response.status_code}').strip()}"
+            )
+            setattr(error, "response", response)
+            setattr(error, "payload", payload)
+            raise error
+        return payload, response
+
+    @staticmethod
+    def _is_rate_limited(response: Any, payload: Any) -> bool:
+        if getattr(response, "status_code", None) == 429:
+            return True
+        if not isinstance(payload, dict):
+            return False
+
+        error_name = str(payload.get("errorName") or "").strip().lower()
+        error_message = (
+            str(payload.get("errorMessage") or payload.get("message") or "")
+            .strip()
+            .lower()
+        )
+        return (
+            error_name == "toomanyrequestsexception"
+            or "too many request" in error_message
+        )
+
+    def _mailbox_retry_delay(self, response: Any, attempt_index: int) -> float:
+        headers = getattr(response, "headers", None)
+        retry_after = None
+        if headers is not None:
+            getter = getattr(headers, "get", None)
+            if callable(getter):
+                retry_after = getter("Retry-After") or getter("retry-after")
+        try:
+            if retry_after is not None:
+                parsed = float(str(retry_after).strip())
+                if parsed > 0:
+                    return parsed
+        except (TypeError, ValueError):
+            pass
+        return float(self._MAILBOX_CREATE_DELAYS[attempt_index])
+
+    def _create_mailbox_payload(self) -> dict[str, Any]:
+        max_attempts = len(self._MAILBOX_CREATE_DELAYS) + 1
+        last_error: RuntimeError | None = None
+
+        for attempt_index in range(max_attempts):
+            self._checkpoint()
+            try:
+                payload, _response = self._request_json("POST", "/mailbox", timeout=10)
+                if not isinstance(payload, dict):
+                    raise RuntimeError(f"TempMail.org 返回异常: {payload}")
+                return payload
+            except RuntimeError as exc:
+                last_error = exc
+                response = getattr(exc, "response", None)
+                payload = getattr(exc, "payload", None)
+                if attempt_index >= max_attempts - 1 or not self._is_rate_limited(
+                    response, payload
+                ):
+                    raise
+                self._sleep_with_checkpoint(
+                    self._mailbox_retry_delay(response, attempt_index)
+                )
+
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("TempMail.org 创建邮箱失败")
+
+    @staticmethod
+    def _resolve_message_id(message: dict[str, Any]) -> str:
+        import hashlib
+
+        explicit_id = str(message.get("id") or "").strip()
+        if explicit_id:
+            return explicit_id
+
+        identity = {
+            "from": message.get("from") or "",
+            "subject": message.get("subject") or "",
+            "receivedAt": message.get("receivedAt") or message.get("date") or "",
+            "bodyPreview": message.get("bodyPreview") or message.get("body") or "",
+        }
+        digest = hashlib.sha1(
+            json.dumps(identity, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        return f"tmorg:{digest}"
+
+    def _list_messages(self, token: str) -> list[dict[str, Any]]:
+        payload, _response = self._request_json(
+            "GET", "/messages", token=token, timeout=30
+        )
+        if isinstance(payload, dict):
+            messages = payload.get("messages", [])
+        else:
+            messages = []
+        return [item for item in (messages or []) if isinstance(item, dict)]
+
+    def get_email(self) -> MailboxAccount:
+        payload = self._create_mailbox_payload()
+
+        email = str(payload.get("mailbox") or payload.get("email") or "").strip()
+        token = str(payload.get("token") or "").strip()
+        if not email:
+            raise RuntimeError(f"TempMail.org 返回空邮箱: {payload}")
+        if not token:
+            raise RuntimeError(f"TempMail.org 返回空 token: {payload}")
+
+        self._log(f"[TempMail.org] 生成邮箱: {email}")
+        return MailboxAccount(
+            email=email,
+            account_id=token,
+            extra={"provider": "tempmailorg", "token": token},
+        )
+
+    def get_current_ids(self, account: MailboxAccount) -> set:
+        token = str(
+            account.account_id or (account.extra or {}).get("token") or ""
+        ).strip()
+        if not token:
+            return set()
+        try:
+            return {
+                self._resolve_message_id(message)
+                for message in self._list_messages(token)
+            }
+        except Exception:
+            return set()
+
+    def wait_for_code(
+        self,
+        account: MailboxAccount,
+        keyword: str = "",
+        timeout: int = 120,
+        before_ids: set = None,
+        code_pattern: str = None,
+        **kwargs,
+    ) -> str:
+        token = str(
+            account.account_id or (account.extra or {}).get("token") or ""
+        ).strip()
+        if not token:
+            raise RuntimeError("TempMail.org 缺少邮箱 token，无法轮询邮件")
+
+        seen = {str(mid) for mid in (before_ids or set())}
+        exclude_codes = {
+            str(code).strip()
+            for code in (kwargs.get("exclude_codes") or set())
+            if str(code or "").strip()
+        }
+
+        def poll_once() -> Optional[str]:
+            try:
+                for message in self._list_messages(token):
+                    message_id = self._resolve_message_id(message)
+                    if message_id in seen:
+                        continue
+                    seen.add(message_id)
+
+                    search_text = " ".join(
+                        [
+                            str(message.get("subject") or ""),
+                            str(message.get("from") or ""),
+                            str(message.get("bodyPreview") or ""),
+                            str(message.get("body") or ""),
+                            str(message.get("text") or ""),
+                            str(message.get("html") or ""),
+                        ]
+                    ).strip()
+                    search_text = self._decode_raw_content(search_text) or search_text
+                    if keyword and keyword.lower() not in search_text.lower():
+                        continue
+
+                    code = self._safe_extract(search_text, code_pattern)
+                    if code and code in exclude_codes:
+                        continue
+                    if code:
+                        self._log(f"[TempMail.org] 收到验证码: {code}")
                         return code
             except Exception:
                 pass
@@ -1787,7 +2060,9 @@ class MaliAPIMailbox(BaseMailbox):
                             str(message.get("snippet") or ""),
                         ]
                     ).strip()
-                    search_text = self._yyds_decode_raw_content(search_text) or search_text
+                    search_text = (
+                        self._yyds_decode_raw_content(search_text) or search_text
+                    )
                     search_text = re.sub(
                         r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
                         "",
@@ -1878,7 +2153,9 @@ class GPTMailMailbox(BaseMailbox):
 
         if response.status_code >= 400:
             error = payload.get("error") if isinstance(payload, dict) else ""
-            message = str(error or response.text or f"HTTP {response.status_code}").strip()
+            message = str(
+                error or response.text or f"HTTP {response.status_code}"
+            ).strip()
             raise RuntimeError(f"GPTMail API {path} 失败: {message}")
 
         if isinstance(payload, dict) and payload.get("success") is False:
@@ -1890,7 +2167,9 @@ class GPTMailMailbox(BaseMailbox):
         return payload
 
     def _list_messages(self, email: str) -> list[dict]:
-        data = self._request_json("GET", "/api/emails", params={"email": email}, timeout=10)
+        data = self._request_json(
+            "GET", "/api/emails", params={"email": email}, timeout=10
+        )
         if isinstance(data, dict):
             messages = data.get("emails", [])
         else:
@@ -1909,7 +2188,11 @@ class GPTMailMailbox(BaseMailbox):
             return MailboxAccount(
                 email=email,
                 account_id=email,
-                extra={"provider": "gptmail", "domain": self.domain, "local_address": True},
+                extra={
+                    "provider": "gptmail",
+                    "domain": self.domain,
+                    "local_address": True,
+                },
             )
 
         data = self._request_json("GET", "/api/generate-email")
@@ -2982,7 +3265,10 @@ class LuckMailMailbox(BaseMailbox):
                         raise TimeoutError(f"LuckMail 等待验证码失败: {e}") from e
 
                     last_status = str(code_result.status or "pending")
-                    if code_result.status == "success" and code_result.verification_code:
+                    if (
+                        code_result.status == "success"
+                        and code_result.verification_code
+                    ):
                         code = code_result.verification_code
                         self._log(f"[LuckMail] 收到验证码: {code}")
                         return code
@@ -3078,8 +3364,7 @@ class OutlookMailboxBackend(ABC):
         self.mailbox = mailbox
 
     @abstractmethod
-    def get_current_ids(self, account: MailboxAccount) -> set:
-        ...
+    def get_current_ids(self, account: MailboxAccount) -> set: ...
 
     @abstractmethod
     def wait_for_code(
@@ -3090,8 +3375,7 @@ class OutlookMailboxBackend(ABC):
         before_ids: set | None = None,
         code_pattern: str | None = None,
         **kwargs,
-    ) -> str:
-        ...
+    ) -> str: ...
 
 
 class OutlookImapMailboxBackend(OutlookMailboxBackend):
@@ -3201,7 +3485,9 @@ class OutlookImapMailboxBackend(OutlookMailboxBackend):
                             )
                             continue
                         msg = message_from_bytes(raw, policy=email_default_policy)
-                        subject = self.mailbox._decode_header_value(msg.get("Subject", ""))
+                        subject = self.mailbox._decode_header_value(
+                            msg.get("Subject", "")
+                        )
                         text = self.mailbox._extract_message_text(msg)
                         self.mailbox._log(
                             f"[微软邮箱][IMAP] folder={folder} 命中新邮件 subject={subject or '-'}"
@@ -3383,9 +3669,7 @@ class OutlookMailbox(BaseMailbox):
                     ]
                 )
             except Exception:
-                self._imap_servers.extend(
-                    ["outlook.live.com", "outlook.office365.com"]
-                )
+                self._imap_servers.extend(["outlook.live.com", "outlook.office365.com"])
         self._imap_servers = [
             host for host in self._imap_servers if isinstance(host, str) and host
         ]
@@ -3416,14 +3700,11 @@ class OutlookMailbox(BaseMailbox):
 
         with self._lock:
             with Session(engine) as session:
-                account = (
-                    session.exec(
-                        select(OutlookAccountModel)
-                        .where(OutlookAccountModel.enabled == True)
-                        .order_by(OutlookAccountModel.id)
-                    )
-                    .first()
-                )
+                account = session.exec(
+                    select(OutlookAccountModel)
+                    .where(OutlookAccountModel.enabled == True)
+                    .order_by(OutlookAccountModel.id)
+                ).first()
                 if not account:
                     raise RuntimeError("微软邮箱账号池为空，请先在设置页批量导入")
 
@@ -3483,7 +3764,9 @@ class OutlookMailbox(BaseMailbox):
         with self._lock:
             with Session(engine) as session:
                 existing = session.exec(
-                    select(OutlookAccountModel).where(OutlookAccountModel.email == email)
+                    select(OutlookAccountModel).where(
+                        OutlookAccountModel.email == email
+                    )
                 ).first()
                 if existing:
                     existing.enabled = True
@@ -3727,7 +4010,9 @@ class OutlookMailbox(BaseMailbox):
             raise RuntimeError("微软邮箱 OAuth 凭据缺失，无法获取 access token")
 
         cache = extra.setdefault("_oauth_token_cache", {})
-        cache_key = self._normalize_backend_name(preferred_backend or self._backend_name)
+        cache_key = self._normalize_backend_name(
+            preferred_backend or self._backend_name
+        )
         cached = cache.get(cache_key) if isinstance(cache, dict) else None
         now = time.time()
         if isinstance(cached, dict):
@@ -3911,7 +4196,9 @@ class OutlookMailbox(BaseMailbox):
             else ""
         )
         combined = " ".join(
-            part for part in [subject, preview, body_content, unique_body_content] if part
+            part
+            for part in [subject, preview, body_content, unique_body_content]
+            if part
         )
         return self._decode_raw_content(combined)
 
@@ -4077,17 +4364,17 @@ class FreemailMailbox(BaseMailbox):
             r = self._session.get(f"{self.api}/api/domains", timeout=15)
             payload = r.json()
             normalized = []
+
             def _append_domain(value):
                 domain = str(value or "").strip().lstrip("@")
                 if domain and domain not in normalized:
                     normalized.append(domain)
+
             if isinstance(payload, list):
                 for item in payload:
                     if isinstance(item, dict):
                         _append_domain(
-                            item.get("domain")
-                            or item.get("name")
-                            or item.get("value")
+                            item.get("domain") or item.get("name") or item.get("value")
                         )
                     else:
                         _append_domain(item)
