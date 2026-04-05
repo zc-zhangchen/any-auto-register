@@ -2137,7 +2137,6 @@ class OAuthClient:
         birthdate="",
         login_source="",
         stop_after_login=False,
-        _continue_depth=0,
     ):
         """
         完整的 OAuth 登录流程，获取 tokens
@@ -2410,7 +2409,7 @@ class OAuthClient:
                     skymail_client,
                     state,
                     prefer_passwordless_login=prefer_passwordless_login,
-                    allow_cached_code_retry=_continue_depth > 0,
+                    allow_cached_code_retry=False,
                 )
                 if not next_state:
                     if not self.last_error:

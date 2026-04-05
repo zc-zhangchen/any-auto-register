@@ -36,7 +36,6 @@ class RefreshTokenRegistrationEngineTests(unittest.TestCase):
             email_service=DummyEmailService(),
             proxy_url="http://127.0.0.1:7890",
             callback_logger=lambda msg: None,
-            max_retries=1,
             **kwargs,
         )
 
@@ -211,7 +210,6 @@ class RefreshTokenRegistrationEngineTests(unittest.TestCase):
             email_service=RotatingEmailService(),
             proxy_url="http://127.0.0.1:7890",
             callback_logger=lambda msg: None,
-            max_retries=2,
         )
         result = engine.run()
 

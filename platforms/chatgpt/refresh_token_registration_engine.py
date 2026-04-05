@@ -156,7 +156,6 @@ class RefreshTokenRegistrationEngine:
         callback_logger: Optional[Callable[[str], None]] = None,
         task_uuid: Optional[str] = None,
         browser_mode: str = "protocol",
-        max_retries: int = 3,
         extra_config: Optional[dict] = None,
     ):
         self.email_service = email_service
@@ -164,8 +163,6 @@ class RefreshTokenRegistrationEngine:
         self.callback_logger = callback_logger or (lambda msg: logger.info(msg))
         self.task_uuid = task_uuid
         self.browser_mode = str(browser_mode or "protocol").strip().lower() or "protocol"
-        # 已移除整流程重试，保留参数仅兼容调用方签名
-        self.max_retries = 1
         self.extra_config = dict(extra_config or {})
 
         self.email: Optional[str] = None
@@ -390,7 +387,7 @@ class RefreshTokenRegistrationEngine:
             self._log("ChatGPT RT 全新主链路启动")
             self._log(f"请求模式: {self.browser_mode}")
             self._log("实现策略: 注册状态机 + OAuth 接续流程")
-            self._log("全流程重试: 已禁用（失败即结束）")
+            self._log("执行策略: 单次执行，失败即结束")
             self._log("=" * 60)
 
             if not fixed_email:
