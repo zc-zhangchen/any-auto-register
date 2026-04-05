@@ -291,6 +291,7 @@ def create_mailbox(
             api_url=extra.get("gptmail_base_url", "https://mail.chatgpt.org.uk"),
             api_key=extra.get("gptmail_api_key", ""),
             domain=extra.get("gptmail_domain", ""),
+            mode=extra.get("gptmail_mode", "api"),
             proxy=proxy,
         )
     elif provider == "applemail":
@@ -1830,13 +1831,17 @@ class GPTMailMailbox(BaseMailbox):
         api_url: str = "https://mail.chatgpt.org.uk",
         api_key: str = "",
         domain: str = "",
+        mode: str = "api",
         proxy: str = None,
     ):
         self.api = (api_url or "https://mail.chatgpt.org.uk").rstrip("/")
         self.api_key = str(api_key or "").strip()
         self.domain = self._normalize_domain(domain)
+        self.mode = self._normalize_mode(mode)
+        self._proxy_url = proxy
         self.proxy = build_requests_proxy_config(proxy)
         self._email = None
+        self._automation_client = None
 
     @staticmethod
     def _normalize_domain(value: Any) -> str:
@@ -1846,6 +1851,13 @@ class GPTMailMailbox(BaseMailbox):
         return domain
 
     @staticmethod
+    def _normalize_mode(value: Any) -> str:
+        mode = str(value or "api").strip().lower() or "api"
+        if mode not in {"api", "automation"}:
+            raise RuntimeError(f"GPTMail 模式不支持: {mode}")
+        return mode
+
+    @staticmethod
     def _generate_local_part() -> str:
         import string
 
@@ -1853,9 +1865,31 @@ class GPTMailMailbox(BaseMailbox):
         suffix = "".join(random.choices(string.digits, k=4))
         return f"{prefix}{suffix}"
 
+    def _get_automation_client(self):
+        if self._automation_client is None:
+            from .gptmail_automation import GPTMailAutomationClient
+
+            self._automation_client = GPTMailAutomationClient(
+                api_base=self.api,
+                proxy_url=self._proxy_url,
+            )
+        return self._automation_client
+
+    @staticmethod
+    def _resolve_message_id(message: dict[str, Any]) -> str:
+        import hashlib
+
+        for key in ("id", "message_id", "uid", "mail_id", "_id"):
+            value = str(message.get(key) or "").strip()
+            if value:
+                return value
+
+        raw = json.dumps(message, ensure_ascii=False, sort_keys=True)
+        return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
     def _headers(self) -> dict[str, str]:
         headers = {"accept": "application/json"}
-        if self.api_key:
+        if self.mode == "api" and self.api_key:
             headers["X-API-Key"] = self.api_key
         return headers
 
@@ -1901,6 +1935,9 @@ class GPTMailMailbox(BaseMailbox):
         return payload
 
     def _list_messages(self, email: str) -> list[dict]:
+        if self.mode == "automation":
+            return self._get_automation_client().get_emails(email)
+
         data = self._request_json("GET", "/api/emails", params={"email": email}, timeout=10)
         if isinstance(data, dict):
             messages = data.get("emails", [])
@@ -1909,6 +1946,8 @@ class GPTMailMailbox(BaseMailbox):
         return [item for item in (messages or []) if isinstance(item, dict)]
 
     def _get_message_detail(self, message_id: str) -> dict[str, Any]:
+        if self.mode == "automation":
+            return {}
         data = self._request_json("GET", f"/api/email/{message_id}", timeout=10)
         return data if isinstance(data, dict) else {}
 
@@ -1920,31 +1959,38 @@ class GPTMailMailbox(BaseMailbox):
             return MailboxAccount(
                 email=email,
                 account_id=email,
-                extra={"provider": "gptmail", "domain": self.domain, "local_address": True},
+                extra={
+                    "provider": "gptmail",
+                    "mode": self.mode,
+                    "domain": self.domain,
+                    "local_address": True,
+                },
             )
 
-        data = self._request_json("GET", "/api/generate-email")
-        if not isinstance(data, dict):
-            raise RuntimeError(f"GPTMail 返回异常: {data}")
-
-        email = str(data.get("email") or "").strip()
-        if not email:
-            raise RuntimeError(f"GPTMail 返回空邮箱: {data}")
+        if self.mode == "automation":
+            email = self._get_automation_client().generate_email()
+        else:
+            data = self._request_json("GET", "/api/generate-email")
+            if not isinstance(data, dict):
+                raise RuntimeError(f"GPTMail 返回异常: {data}")
+            email = str(data.get("email") or "").strip()
+            if not email:
+                raise RuntimeError(f"GPTMail 返回空邮箱: {data}")
 
         self._email = email
-        self._log(f"[GPTMail] 生成邮箱: {email}")
+        self._log(f"[GPTMail/{self.mode}] 生成邮箱: {email}")
         return MailboxAccount(
             email=email,
             account_id=email,
-            extra={"provider": "gptmail"},
+            extra={"provider": "gptmail", "mode": self.mode},
         )
 
     def get_current_ids(self, account: MailboxAccount) -> set:
         try:
             return {
-                str(message.get("id"))
+                self._resolve_message_id(message)
                 for message in self._list_messages(account.email)
-                if message.get("id") is not None
+                if self._resolve_message_id(message)
             }
         except Exception:
             return set()
@@ -1969,7 +2015,7 @@ class GPTMailMailbox(BaseMailbox):
             try:
                 messages = self._list_messages(account.email)
                 for message in messages:
-                    message_id = str(message.get("id") or "").strip()
+                    message_id = self._resolve_message_id(message)
                     if not message_id or message_id in seen:
                         continue
                     seen.add(message_id)
@@ -1983,9 +2029,13 @@ class GPTMailMailbox(BaseMailbox):
                         [
                             str(message.get("subject") or ""),
                             str(message.get("from_address") or ""),
+                            str(message.get("text") or ""),
+                            str(message.get("html") or ""),
                             str(message.get("content") or ""),
                             str(message.get("html_content") or ""),
                             str(detail.get("subject") or ""),
+                            str(detail.get("text") or ""),
+                            str(detail.get("html") or ""),
                             str(detail.get("content") or ""),
                             str(detail.get("html_content") or ""),
                             str(detail.get("raw_headers") or ""),

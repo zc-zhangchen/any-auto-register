@@ -40,6 +40,10 @@ const SELECT_FIELDS: Record<string, { label: string; value: string }[]> = {
     { label: 'prefer_owned', value: 'prefer_owned' },
     { label: 'prefer_public', value: 'prefer_public' },
   ],
+  gptmail_mode: [
+    { label: 'API', value: 'api' },
+    { label: 'Automation', value: 'automation' },
+  ],
   default_executor: [
     { label: 'API 协议（无浏览器）', value: 'protocol' },
     { label: '无头浏览器', value: 'headless' },
@@ -169,10 +173,11 @@ const TAB_ITEMS = [
       },
       {
         title: 'GPTMail',
-        desc: '基于 GPTMail API 生成临时邮箱并轮询邮件；若已知本站可用域名，也可本地拼装随机地址',
+        desc: '支持 API Key 模式或网页端 automation 模式；若已知本站可用域名，也可本地拼装随机地址',
         fields: [
           { key: 'gptmail_base_url', label: 'API URL', placeholder: 'https://mail.chatgpt.org.uk' },
           { key: 'gptmail_api_key', label: 'API Key', secret: true, placeholder: 'gpt-test' },
+          { key: 'gptmail_mode', label: '生成模式', type: 'select' },
           { key: 'gptmail_domain', label: '邮箱域名（可选）', placeholder: 'example.com' },
         ],
       },
@@ -1813,6 +1818,9 @@ export default function Settings() {
       }
       if (!data.gptmail_base_url) {
         data.gptmail_base_url = 'https://mail.chatgpt.org.uk'
+      }
+      if (!data.gptmail_mode) {
+        data.gptmail_mode = 'api'
       }
       if (!data.maliapi_base_url) {
         data.maliapi_base_url = 'https://maliapi.215.im/v1'

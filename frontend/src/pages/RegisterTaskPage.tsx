@@ -76,6 +76,7 @@ export default function RegisterTaskPage() {
         laoudo_account_id: cfg.laoudo_account_id || '',
         gptmail_base_url: cfg.gptmail_base_url || 'https://mail.chatgpt.org.uk',
         gptmail_api_key: cfg.gptmail_api_key || '',
+        gptmail_mode: cfg.gptmail_mode || 'api',
         gptmail_domain: cfg.gptmail_domain || '',
         opentrashmail_api_url: cfg.opentrashmail_api_url || '',
         opentrashmail_domain: cfg.opentrashmail_domain || '',
@@ -133,6 +134,7 @@ export default function RegisterTaskPage() {
       laoudo_account_id: values.laoudo_account_id,
       gptmail_base_url: values.gptmail_base_url,
       gptmail_api_key: values.gptmail_api_key,
+      gptmail_mode: values.gptmail_mode,
       gptmail_domain: values.gptmail_domain,
       opentrashmail_api_url: values.opentrashmail_api_url,
       opentrashmail_domain: values.opentrashmail_domain,
@@ -261,6 +263,7 @@ export default function RegisterTaskPage() {
         cfrouting_imap_port: 993,
         cfrouting_mailboxes: 'INBOX',
         gptmail_base_url: 'https://mail.chatgpt.org.uk',
+        gptmail_mode: 'api',
         cloudmail_timeout: 30,
         count: 1,
         concurrency: 1,
@@ -443,6 +446,18 @@ export default function RegisterTaskPage() {
               </Form.Item>
               <Form.Item name="gptmail_api_key" label="API Key">
                 <Input.Password placeholder="gpt-test" />
+              </Form.Item>
+              <Form.Item
+                name="gptmail_mode"
+                label="生成模式"
+                extra="api 使用站点 API Key；automation 走网页端会话，自动完成 cookie + token 初始化"
+              >
+                <Select
+                  options={[
+                    { value: 'api', label: 'API' },
+                    { value: 'automation', label: 'Automation' },
+                  ]}
+                />
               </Form.Item>
               <Form.Item
                 name="gptmail_domain"

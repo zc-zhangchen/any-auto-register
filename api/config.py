@@ -46,6 +46,7 @@ CONFIG_KEYS = [
     "applemail_mailboxes",
     "gptmail_base_url",
     "gptmail_api_key",
+    "gptmail_mode",
     "gptmail_domain",
     "opentrashmail_api_url",
     "opentrashmail_domain",
@@ -134,6 +135,8 @@ def get_config():
         all_cfg["cfrouting_mailboxes"] = "INBOX"
     if not all_cfg.get("gptmail_base_url"):
         all_cfg["gptmail_base_url"] = "https://mail.chatgpt.org.uk"
+    if not all_cfg.get("gptmail_mode"):
+        all_cfg["gptmail_mode"] = "api"
     if not all_cfg.get("luckmail_base_url"):
         all_cfg["luckmail_base_url"] = "https://mails.luckyous.com/"
     if not all_cfg.get("contribution_server_url"):
