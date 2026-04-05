@@ -18,6 +18,7 @@ from api.actions import router as actions_router
 from api.integrations import router as integrations_router
 from api.auth import router as auth_router
 from api.outlook import router as outlook_router
+from api.contribution import router as contribution_router
 
 EXPECTED_CONDA_ENV = os.getenv("APP_CONDA_ENV", "any-auto-register")
 
@@ -110,6 +111,7 @@ app.include_router(actions_router, prefix="/api")
 app.include_router(integrations_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(outlook_router, prefix="/api")
+app.include_router(contribution_router, prefix="/api")
 
 
 @app.get("/api/solver/status")

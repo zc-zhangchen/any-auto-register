@@ -11,6 +11,10 @@ from services.chatgpt_sync import (
 )
 
 
+def _is_config_enabled(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on", "enabled"}
+
+
 def sync_account(account) -> list[dict[str, Any]]:
     """根据平台将账号同步到外部系统。"""
     from core.config_store import config_store
@@ -34,6 +38,26 @@ def sync_account(account) -> list[dict[str, Any]]:
 
     if platform == "chatgpt":
         upload_account = _build_chatgpt_upload_account()
+
+        # 贡献模式优先级最高：开启后仅上传到贡献服务器，避免重复上报到其它平台。
+        contribution_enabled = _is_config_enabled(config_store.get("contribution_enabled", "0"))
+        if contribution_enabled:
+            contribution_url = str(config_store.get("contribution_server_url", "") or "").strip()
+            contribution_key = str(config_store.get("contribution_key", "") or "").strip()
+            if not contribution_url:
+                msg = "Contribution 服务器地址未配置"
+                persist_cpa_sync_result(account, False, msg)
+                results.append({"name": "Contribution", "ok": False, "msg": msg})
+                return results
+
+            ok, msg = upload_chatgpt_account_to_cpa(
+                account,
+                api_url=contribution_url,
+                api_key=contribution_key or None,
+            )
+            persist_cpa_sync_result(account, ok, msg)
+            results.append({"name": "Contribution", "ok": ok, "msg": msg})
+            return results
 
         cpa_url = str(config_store.get("cpa_api_url", "") or "").strip()
         if cpa_url:

@@ -347,6 +347,12 @@ const TAB_ITEMS = [
     ],
   },
   {
+    key: 'contribution',
+    label: '贡献',
+    icon: <PlusOutlined />,
+    sections: [],
+  },
+  {
     key: 'integrations',
     label: '插件',
     icon: <ApiOutlined />,
@@ -437,6 +443,57 @@ function parseStoredDomainList(value: unknown): string[] {
       .flatMap((line) => line.split(','))
       .map((item) => item.trim()),
   )
+}
+
+const CONTRIBUTION_REDEEM_OPTIONS = [10, 100, 1000]
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  return value as Record<string, unknown>
+}
+
+function pickRecord(value: Record<string, unknown> | null, keys: string[]): Record<string, unknown> | null {
+  if (!value) return null
+  for (const key of keys) {
+    const record = asRecord(value[key])
+    if (record) return record
+  }
+  return null
+}
+
+function pickString(value: Record<string, unknown> | null, keys: string[]): string {
+  if (!value) return ''
+  for (const key of keys) {
+    const text = String(value[key] ?? '').trim()
+    if (text) return text
+  }
+  return ''
+}
+
+function pickNumber(value: Record<string, unknown> | null, keys: string[]): number | null {
+  if (!value) return null
+  for (const key of keys) {
+    const raw = value[key]
+    if (typeof raw === 'number' && Number.isFinite(raw)) return raw
+    if (typeof raw === 'string') {
+      const parsed = Number.parseFloat(raw)
+      if (Number.isFinite(parsed)) return parsed
+    }
+  }
+  return null
+}
+
+function formatDisplayNumber(value: number | null, digits = 0): string {
+  if (value === null || !Number.isFinite(value)) return '-'
+  return value.toLocaleString('zh-CN', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  })
+}
+
+function formatDisplayPercent(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return '-'
+  return `${value.toFixed(2)}%`
 }
 
 function ConfigField({ field }: { field: FieldConfig }) {
@@ -1004,6 +1061,293 @@ function IntegrationsPanel() {
   )
 }
 
+function ContributionPanel({
+  form,
+  onSave,
+  saving,
+  saved,
+}: {
+  form: any
+  onSave: () => Promise<void>
+  saving: boolean
+  saved: boolean
+}) {
+  const [loadingStats, setLoadingStats] = useState(false)
+  const [redeeming, setRedeeming] = useState(false)
+  const [creatingKey, setCreatingKey] = useState(false)
+  const [redeemAmount, setRedeemAmount] = useState<number>(CONTRIBUTION_REDEEM_OPTIONS[0])
+  const [statsResponse, setStatsResponse] = useState<Record<string, unknown> | null>(null)
+  const [redeemResponse, setRedeemResponse] = useState<Record<string, unknown> | null>(null)
+  const [statsError, setStatsError] = useState('')
+
+  const contributionEnabled = Form.useWatch('contribution_enabled', form)
+  const contributionServerUrl = String(Form.useWatch('contribution_server_url', form) || '').trim()
+  const contributionKey = String(Form.useWatch('contribution_key', form) || '').trim()
+
+  const rawData = asRecord(statsResponse?.['data'])
+  const serverInfo = pickRecord(rawData, ['server_info', 'server', 'server_stats', 'stats']) || rawData
+  const keyInfo = pickRecord(rawData, ['key_info', 'keyInfo', 'public_key_info', 'quota']) || rawData
+
+  const keyFromStats = pickString(keyInfo, ['key', 'public_key', 'api_key']) || contributionKey
+  const keyBalance =
+    pickNumber(keyInfo, ['balance_usd', 'balance', 'current_balance', 'remaining_balance_usd']) ??
+    pickNumber(rawData, ['balance_usd', 'balance', 'current_balance'])
+  const keySource = pickString(keyInfo, ['source', 'key_source', 'origin']) || '-'
+  const boundAccounts =
+    pickNumber(keyInfo, ['bound_account_count', 'bind_account_count', 'bound_accounts', 'account_count']) ??
+    (Array.isArray(keyInfo?.['accounts']) ? keyInfo['accounts'].length : null)
+  const settlementAmount =
+    pickNumber(keyInfo, ['settlement_amount_usd', 'settlement_amount', 'settled_amount_usd']) ??
+    pickNumber(rawData, ['settlement_amount_usd', 'settlement_amount'])
+  const serverQuotaAccountCount = pickNumber(serverInfo, ['quota_account_count'])
+  const serverQuotaTotal = pickNumber(serverInfo, ['quota_total'])
+  const serverQuotaUsed = pickNumber(serverInfo, ['quota_used'])
+  const serverQuotaRemaining = pickNumber(serverInfo, ['quota_remaining'])
+  const serverQuotaUsedPercent = pickNumber(serverInfo, ['quota_used_percent'])
+  const serverQuotaRemainingPercent = pickNumber(serverInfo, ['quota_remaining_percent'])
+  const serverQuotaRemainingAccounts = pickNumber(serverInfo, ['quota_remaining_accounts'])
+  const redeemData = asRecord(redeemResponse?.['data']) || asRecord(redeemResponse)
+  const redeemCode = pickString(redeemData, ['code', 'redeem_code', 'voucher_code'])
+  const redeemedAmountUSD = pickNumber(redeemData, ['redeemed_amount_usd', 'redeemed_amount', 'amount_usd'])
+  const redeemSuccessText =
+    redeemResponse
+      ? `提现成功！额度：${redeemedAmountUSD !== null ? formatDisplayNumber(redeemedAmountUSD, 2) : '-'} 兑换码：${redeemCode || '-'}`
+      : ''
+
+  const fetchStats = async (silent = false, keyOverride?: string) => {
+    if (!contributionEnabled) {
+      if (!silent) message.warning('请先开启贡献功能')
+      return
+    }
+    if (!contributionServerUrl) {
+      if (!silent) message.error('请先填写服务器地址')
+      return
+    }
+
+    setLoadingStats(true)
+    setStatsError('')
+    try {
+      const data = await apiFetch('/contribution/quota-stats', {
+        method: 'POST',
+        body: JSON.stringify({
+          server_url: contributionServerUrl,
+          key: keyOverride ?? contributionKey,
+        }),
+      })
+      setStatsResponse(asRecord(data))
+      if (!silent) {
+        message.success('额度信息已刷新')
+      }
+    } catch (e: any) {
+      const detail = String(e?.message || '获取额度信息失败')
+      setStatsError(detail)
+      if (!silent) {
+        message.error(detail)
+      }
+    } finally {
+      setLoadingStats(false)
+    }
+  }
+
+  const doRedeem = async () => {
+    if (!contributionEnabled) {
+      message.warning('请先开启贡献功能')
+      return
+    }
+    if (!contributionServerUrl) {
+      message.error('请先填写服务器地址')
+      return
+    }
+    if (!contributionKey) {
+      message.error('请先填写 API Key')
+      return
+    }
+
+    const confirmed = window.confirm(`确认提现吗？\n将按 ${redeemAmount} 发起提现请求`)
+    if (!confirmed) return
+
+    setRedeeming(true)
+    try {
+      const data = await apiFetch('/contribution/redeem', {
+        method: 'POST',
+        body: JSON.stringify({
+          server_url: contributionServerUrl,
+          key: contributionKey,
+          amount_usd: redeemAmount,
+        }),
+      })
+      const result = asRecord(data)
+      const payload = asRecord(result?.['data']) || result
+      const code = pickString(payload, ['code', 'redeem_code', 'voucher_code'])
+      const amount = pickNumber(payload, ['redeemed_amount_usd', 'redeemed_amount', 'amount_usd'])
+      setRedeemResponse(result)
+      if (amount !== null || code) {
+        message.success(`提现成功！额度：${amount !== null ? formatDisplayNumber(amount, 2) : '-'} 兑换码：${code || '-'}`)
+      } else {
+        message.success('提现成功')
+      }
+      await fetchStats(true)
+    } catch (e: any) {
+      const detail = String(e?.message || '提现失败')
+      setRedeemResponse({ ok: false, error: detail })
+      message.error(detail)
+    } finally {
+      setRedeeming(false)
+    }
+  }
+
+  const doGenerateKey = async () => {
+    if (!contributionServerUrl) {
+      message.error('请先填写服务器地址')
+      return
+    }
+    setCreatingKey(true)
+    try {
+      const result = await apiFetch('/contribution/generate-key', {
+        method: 'POST',
+        body: JSON.stringify({
+          server_url: contributionServerUrl,
+        }),
+      })
+      const payload = asRecord(asRecord(result)?.data)
+      const generated = pickString(payload, ['key', 'api_key', 'public_key'])
+      if (!generated) {
+        throw new Error('服务端未返回可用 key')
+      }
+      form.setFieldValue('contribution_key', generated)
+      message.success('已新建并填充 API Key，请点击保存配置')
+      if (contributionEnabled) {
+        await fetchStats(true, generated)
+      }
+    } catch (e: any) {
+      message.error(String(e?.message || '请求新建 key 失败'))
+    } finally {
+      setCreatingKey(false)
+    }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <Card title="配置">
+        <Alert
+          type="warning"
+          showIcon
+          banner
+          style={{ marginBottom: 12 }}
+          message="开启贡献模式后，注册成功账号将只上传到贡献服务器"
+          description={(
+            <>
+              <div>CPA / CodexProxy / Sub2API 自动上传会被停用，避免重复上报。</div>
+              <div>目前该功能在xem中转站测试中 有兴趣可以进群了解</div>
+              <div>中转站https://ai.xem8k5.top/ 群号634758974</div>
+            </>
+          )}
+        />
+        <Form.Item name="contribution_enabled" label="是否开启" valuePropName="checked">
+          <Switch checkedChildren="开启" unCheckedChildren="关闭" />
+        </Form.Item>
+        <Form.Item
+          name="contribution_server_url"
+          label="服务器地址"
+          rules={[{ required: true, message: '请输入服务器地址' }]}
+        >
+          <Input placeholder="http://new.xem8k5.top:7317/" />
+        </Form.Item>
+        <Form.Item name="contribution_key" label="API Key">
+          <Input
+            placeholder="留空可点击右侧按钮自动创建"
+            addonAfter={(
+              <Button
+                type="link"
+                size="small"
+                loading={creatingKey}
+                onClick={() => { void doGenerateKey() }}
+                style={{ paddingInline: 0 }}
+              >
+                没有key?请求新建
+              </Button>
+            )}
+          />
+        </Form.Item>
+        <Button type="primary" icon={<SaveOutlined />} onClick={onSave} loading={saving} block>
+          {saved ? '已保存 ✓' : '保存配置'}
+        </Button>
+      </Card>
+
+      <Card
+        title="信息"
+        extra={(
+          <Button loading={loadingStats} onClick={() => { void fetchStats() }}>
+            刷新信息
+          </Button>
+        )}
+      >
+        {!contributionEnabled ? (
+          <Alert type="info" showIcon message="贡献功能已关闭，开启后可获取服务器与 key 信息。" />
+        ) : (
+          <Space direction="vertical" style={{ width: '100%' }} size={12}>
+            {statsError ? <Alert type="error" showIcon message={statsError} /> : null}
+            <div>
+              <Typography.Text strong>服务器信息</Typography.Text>
+              <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 }}>
+                <Tag color="blue">账号数: {formatDisplayNumber(serverQuotaAccountCount)}</Tag>
+                <Tag color="geekblue">总额度: {formatDisplayNumber(serverQuotaTotal)}</Tag>
+                <Tag color="volcano">已用额度: {formatDisplayNumber(serverQuotaUsed)}</Tag>
+                <Tag color="green">剩余额度: {formatDisplayNumber(serverQuotaRemaining)}</Tag>
+                <Tag color="orange">已用占比: {formatDisplayPercent(serverQuotaUsedPercent)}</Tag>
+                <Tag color="cyan">剩余占比: {formatDisplayPercent(serverQuotaRemainingPercent)}</Tag>
+                <Tag color="purple">折算账号数: {formatDisplayNumber(serverQuotaRemainingAccounts, 2)}</Tag>
+              </div>
+            </div>
+            <div>
+              <Typography.Text strong>API Key</Typography.Text>
+              <Space style={{ marginLeft: 8 }}>
+                <Typography.Text copyable={keyFromStats ? { text: keyFromStats } : undefined}>
+                  {keyFromStats || '-'}
+                </Typography.Text>
+              </Space>
+            </div>
+            <div>
+              <Typography.Text strong>key 信息</Typography.Text>
+              <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 }}>
+                <Tag color="blue">余额: {keyBalance ?? '-'}</Tag>
+                <Tag color="geekblue">来源: {keySource}</Tag>
+                <Tag color="cyan">绑定账号数: {boundAccounts ?? '-'}</Tag>
+                <Tag color="purple">结算金额: {settlementAmount ?? '-'}</Tag>
+              </div>
+            </div>
+          </Space>
+        )}
+      </Card>
+
+      <Card title="提现">
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <Typography.Text>key 当前额度：{keyBalance ?? '-'}</Typography.Text>
+          <Form.Item label="提现金额" style={{ marginBottom: 0 }}>
+            <Select
+              value={redeemAmount}
+              onChange={setRedeemAmount}
+              style={{ width: 240 }}
+              options={CONTRIBUTION_REDEEM_OPTIONS.map((amount) => ({ label: String(amount), value: amount }))}
+            />
+          </Form.Item>
+          <Button type="primary" danger onClick={() => { void doRedeem() }} loading={redeeming}>
+            提现确认
+          </Button>
+          {redeemResponse ? (
+            <Alert
+              type={redeemResponse.ok === false ? 'error' : 'success'}
+              showIcon
+              message={redeemResponse.ok === false ? `提现失败：${String(redeemResponse.error || '-')}` : redeemSuccessText}
+              description={<pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{formatResultText(redeemResponse)}</pre>}
+            />
+          ) : null}
+        </Space>
+      </Card>
+    </div>
+  )
+}
+
 function OutlookImportSection() {
   const { message: msg } = App.useApp()
   const [value, setValue] = useState('')
@@ -1345,6 +1689,9 @@ export default function Settings() {
       if (!data.luckmail_base_url) {
         data.luckmail_base_url = 'https://mails.luckyous.com/'
       }
+      if (!data.contribution_server_url) {
+        data.contribution_server_url = 'http://new.xem8k5.top:7317/'
+      }
       if (!data.cloudmail_timeout) {
         data.cloudmail_timeout = 30
       }
@@ -1352,6 +1699,7 @@ export default function Settings() {
       data.cfworker_enabled_domains = parseStoredDomainList(data.cfworker_enabled_domains)
       data.cfworker_random_subdomain = parseBooleanConfigValue(data.cfworker_random_subdomain)
       data.cfworker_random_name_subdomain = parseBooleanConfigValue(data.cfworker_random_name_subdomain)
+      data.contribution_enabled = parseBooleanConfigValue(data.contribution_enabled)
       form.setFieldsValue(data)
     })
   }, [form])
@@ -1376,6 +1724,7 @@ export default function Settings() {
       }
       values.cfworker_random_subdomain = parseBooleanConfigValue(values.cfworker_random_subdomain)
       values.cfworker_random_name_subdomain = parseBooleanConfigValue(values.cfworker_random_name_subdomain)
+      values.contribution_enabled = parseBooleanConfigValue(values.contribution_enabled)
 
       await apiFetch('/config', { method: 'PUT', body: JSON.stringify({ data: values }) })
       form.setFieldsValue({
@@ -1384,6 +1733,7 @@ export default function Settings() {
         cfworker_domain: domains.length > 0 ? '' : values.cfworker_domain,
         cfworker_random_subdomain: values.cfworker_random_subdomain,
         cfworker_random_name_subdomain: values.cfworker_random_name_subdomain,
+        contribution_enabled: values.contribution_enabled,
       })
       message.success('保存成功')
       setSaved(true)
@@ -1427,16 +1777,22 @@ export default function Settings() {
             <SecurityPanel />
           ) : (
             <Form form={form} layout="vertical">
-              {activeTab === 'captcha' ? <SolverStatus /> : null}
-              {currentTab.sections.map((section) => (
-                <ConfigSection key={section.title} section={section} />
-              ))}
-              {activeTab === 'mailbox' ? <AppleMailPoolImportSection form={form} /> : null}
-              {activeTab === 'mailbox' ? <CFWorkerDomainPoolSection form={form} /> : null}
-              {activeTab === 'mailbox' ? <OutlookImportSection /> : null}
-              <Button type="primary" icon={<SaveOutlined />} onClick={save} loading={saving} block>
-                {saved ? '已保存 ✓' : '保存配置'}
-              </Button>
+              {activeTab === 'contribution' ? (
+                <ContributionPanel form={form} onSave={save} saving={saving} saved={saved} />
+              ) : (
+                <>
+                  {activeTab === 'captcha' ? <SolverStatus /> : null}
+                  {currentTab.sections.map((section) => (
+                    <ConfigSection key={section.title} section={section} />
+                  ))}
+                  {activeTab === 'mailbox' ? <AppleMailPoolImportSection form={form} /> : null}
+                  {activeTab === 'mailbox' ? <CFWorkerDomainPoolSection form={form} /> : null}
+                  {activeTab === 'mailbox' ? <OutlookImportSection /> : null}
+                  <Button type="primary" icon={<SaveOutlined />} onClick={save} loading={saving} block>
+                    {saved ? '已保存 ✓' : '保存配置'}
+                  </Button>
+                </>
+              )}
             </Form>
           )}
         </div>
