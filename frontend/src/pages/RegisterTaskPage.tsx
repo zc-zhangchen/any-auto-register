@@ -73,6 +73,7 @@ export default function RegisterTaskPage() {
         gptmail_base_url: cfg.gptmail_base_url || 'https://mail.chatgpt.org.uk',
         gptmail_api_key: cfg.gptmail_api_key || '',
         gptmail_domain: cfg.gptmail_domain || '',
+        tempmailorg_api_url: cfg.tempmailorg_api_url || 'https://web2.temp-mail.org',
         opentrashmail_api_url: cfg.opentrashmail_api_url || '',
         opentrashmail_domain: cfg.opentrashmail_domain || '',
         opentrashmail_password: cfg.opentrashmail_password || '',
@@ -125,6 +126,7 @@ export default function RegisterTaskPage() {
       gptmail_base_url: values.gptmail_base_url,
       gptmail_api_key: values.gptmail_api_key,
       gptmail_domain: values.gptmail_domain,
+      tempmailorg_api_url: values.tempmailorg_api_url,
       opentrashmail_api_url: values.opentrashmail_api_url,
       opentrashmail_domain: values.opentrashmail_domain,
       opentrashmail_password: values.opentrashmail_password,
@@ -249,6 +251,7 @@ export default function RegisterTaskPage() {
         applemail_mailboxes: 'INBOX,Junk',
         outlook_backend: 'graph',
         gptmail_base_url: 'https://mail.chatgpt.org.uk',
+        tempmailorg_api_url: 'https://web2.temp-mail.org',
         cloudmail_timeout: 30,
         count: 1,
         concurrency: 1,
@@ -317,6 +320,7 @@ export default function RegisterTaskPage() {
                 { value: 'mail_import', label: '邮箱导入' },
                 { value: 'moemail', label: 'MoeMail (sall.cc)' },
                 { value: 'tempmail_lol', label: 'TempMail.lol' },
+                { value: 'tempmailorg', label: 'TempMail.org' },
                 { value: 'skymail', label: 'SkyMail (CloudMail)' },
                 { value: 'cloudmail', label: 'CloudMail (genToken)' },
                 { value: 'maliapi', label: 'YYDS Mail / MaliAPI' },
@@ -461,6 +465,13 @@ export default function RegisterTaskPage() {
                 extra="已知当前可用域名时可直接本地拼装随机地址，省掉一次 generate-email 请求"
               >
                 <Input placeholder="example.com" />
+              </Form.Item>
+            </>
+          )}
+          {mailProvider === 'tempmailorg' && (
+            <>
+              <Form.Item name="tempmailorg_api_url" label="API URL">
+                <Input placeholder="https://web2.temp-mail.org" />
               </Form.Item>
             </>
           )}
