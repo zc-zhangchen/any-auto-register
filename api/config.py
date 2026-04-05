@@ -1,7 +1,11 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from core.config_store import config_store
-from services.mail_imports import MailImportExecuteRequest, MailImportSnapshotRequest, mail_import_registry
+from services.mail_imports import (
+    MailImportExecuteRequest,
+    MailImportSnapshotRequest,
+    mail_import_registry,
+)
 
 router = APIRouter(prefix="/config", tags=["config"])
 
@@ -48,6 +52,7 @@ CONFIG_KEYS = [
     "gptmail_base_url",
     "gptmail_api_key",
     "gptmail_domain",
+    "tempmailorg_api_url",
     "opentrashmail_api_url",
     "opentrashmail_domain",
     "opentrashmail_password",
@@ -131,6 +136,8 @@ def get_config():
         all_cfg["outlook_backend"] = "graph"
     if not all_cfg.get("gptmail_base_url"):
         all_cfg["gptmail_base_url"] = "https://mail.chatgpt.org.uk"
+    if not all_cfg.get("tempmailorg_api_url"):
+        all_cfg["tempmailorg_api_url"] = "https://web2.temp-mail.org"
     if not all_cfg.get("luckmail_base_url"):
         all_cfg["luckmail_base_url"] = "https://mails.luckyous.com/"
     if not str(all_cfg.get("contribution_enabled", "") or "").strip():
