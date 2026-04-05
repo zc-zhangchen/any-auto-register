@@ -445,6 +445,26 @@ class OAuthClientPasswordlessTests(unittest.TestCase):
         self.assertEqual(submit_about_you.call_args.args[1], "Stone")
         self.assertEqual(submit_about_you.call_args.args[2], "1990-01-02")
 
+    def test_oauth_submit_workspace_and_org_can_shortcut_by_consent_preflight_code(self):
+        client = self._make_client()
+        with mock.patch.object(
+            client,
+            "_oauth_follow_for_code",
+            return_value=("auth-code", "http://localhost:1455/auth/callback?code=auth-code"),
+        ), mock.patch.object(client, "_load_workspace_session_data") as load_session:
+            code, state = client._oauth_submit_workspace_and_org(
+                "https://auth.openai.com/sign-in-with-chatgpt/codex/consent",
+                "device-fixed",
+                "UA",
+                None,
+                max_retries=1,
+                consent_referer="https://auth.openai.com/add-phone",
+            )
+
+        self.assertEqual(code, "auth-code")
+        self.assertIsNotNone(state)
+        load_session.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

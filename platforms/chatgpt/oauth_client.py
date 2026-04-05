@@ -1941,6 +1941,7 @@ class OAuthClient:
                     device_id,
                     user_agent,
                     impersonate,
+                    consent_referer=state.current_url or referer,
                 )
                 if code:
                     self._log(f"获取到 authorization code: {code[:20]}...")
@@ -2467,6 +2468,7 @@ class OAuthClient:
                         device_id,
                         user_agent,
                         impersonate,
+                        consent_referer=state.current_url or referer,
                     )
                     if code:
                         self._log(f"获取到 authorization code: {code[:20]}...")
@@ -2547,6 +2549,7 @@ class OAuthClient:
                     device_id,
                     user_agent,
                     impersonate,
+                    consent_referer=state.current_url or referer,
                 )
                 if code:
                     self._log(f"获取到 authorization code: {code[:20]}...")
@@ -2600,11 +2603,35 @@ class OAuthClient:
         return code, (next_state.current_url or next_state.continue_url or start_url)
 
     def _oauth_submit_workspace_and_org(
-        self, consent_url, device_id, user_agent, impersonate, max_retries=3
+        self,
+        consent_url,
+        device_id,
+        user_agent,
+        impersonate,
+        max_retries=3,
+        consent_referer: str | None = None,
     ):
         """提交 workspace 和 organization 选择（带重试）"""
         self._enter_stage("workspace_select", consent_url[:120] if consent_url else "")
         device_id = self._current_device_id(device_id)
+        referer_hint = str(consent_referer or "").strip()
+
+        try:
+            probe_code, probe_url = self._oauth_follow_for_code(
+                consent_url,
+                referer_hint or f"{self.oauth_issuer}/add-phone",
+                user_agent,
+                impersonate,
+                max_hops=6,
+            )
+            if probe_code:
+                self._log("consent 预探测已直接获取 code")
+                return probe_code, self._state_from_url(probe_url or consent_url)
+            if probe_url and probe_url != consent_url:
+                self._log(f"consent 预探测落点: {str(probe_url)[:120]}")
+        except Exception as e:
+            self._log(f"consent 预探测异常（忽略）: {e}")
+
         session_data = None
 
         for attempt in range(max_retries):
@@ -2612,6 +2639,7 @@ class OAuthClient:
                 consent_url=consent_url,
                 user_agent=user_agent,
                 impersonate=impersonate,
+                consent_referer=referer_hint,
             )
             if (
                 isinstance(session_data, dict)
@@ -2668,7 +2696,7 @@ class OAuthClient:
             f"{self.oauth_issuer}/api/accounts/workspace/select",
             user_agent=user_agent,
             accept="application/json",
-            referer=consent_url,
+            referer=referer_hint or consent_url,
             origin=self.oauth_issuer,
             content_type="application/json",
             fetch_site="same-origin",
@@ -2861,7 +2889,13 @@ class OAuthClient:
 
         return None, None
 
-    def _load_workspace_session_data(self, consent_url, user_agent, impersonate):
+    def _load_workspace_session_data(
+        self,
+        consent_url,
+        user_agent,
+        impersonate,
+        consent_referer: str | None = None,
+    ):
         """按 provenance 置信度选择 session 数据（cookie 与 consent HTML 交叉校验）。"""
         cookie_data = self._decode_oauth_session_cookie()
         cookie_workspace_ids, _ = self._extract_workspace_org_ids_from_session(cookie_data)
@@ -2875,7 +2909,12 @@ class OAuthClient:
             return self._clean_session_data(cookie_data)
 
         html_data = None
-        html = self._fetch_consent_page_html(consent_url, user_agent, impersonate)
+        html = self._fetch_consent_page_html(
+            consent_url,
+            user_agent,
+            impersonate,
+            referer=consent_referer,
+        )
         if html:
             parsed = self._extract_session_data_from_consent_html(html)
             if parsed and parsed.get("workspaces"):
@@ -2893,27 +2932,51 @@ class OAuthClient:
 
         return None
 
-    def _fetch_consent_page_html(self, consent_url, user_agent, impersonate):
+    def _fetch_consent_page_html(
+        self,
+        consent_url,
+        user_agent,
+        impersonate,
+        referer: str | None = None,
+    ):
         """获取 consent 页 HTML，用于解析 React Router stream 中的 session 数据。"""
-        try:
-            headers = self._headers(
-                consent_url,
-                user_agent=user_agent,
-                accept="text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                referer=f"{self.oauth_issuer}/email-verification",
-                navigation=True,
-            )
-            kwargs = {"headers": headers, "allow_redirects": False, "timeout": 30}
-            if impersonate:
-                kwargs["impersonate"] = impersonate
-            self._browser_pause(0.12, 0.3)
-            r = self.session.get(consent_url, **kwargs)
-            if r.status_code == 200 and "text/html" in (
-                r.headers.get("content-type", "").lower()
-            ):
-                return r.text
-        except Exception:
-            pass
+        current_url = str(consent_url or "").strip()
+        if not current_url:
+            return ""
+        current_referer = str(referer or "").strip() or f"{self.oauth_issuer}/add-phone"
+
+        for hop in range(3):
+            try:
+                headers = self._headers(
+                    current_url,
+                    user_agent=user_agent,
+                    accept="text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    referer=current_referer,
+                    navigation=True,
+                )
+                kwargs = {"headers": headers, "allow_redirects": False, "timeout": 30}
+                if impersonate:
+                    kwargs["impersonate"] = impersonate
+                self._browser_pause(0.12, 0.3)
+                r = self.session.get(current_url, **kwargs)
+                status = int(getattr(r, "status_code", 0) or 0)
+                content_type = str(r.headers.get("content-type", "") or "").lower()
+                self._log(
+                    f"consent fetch[{hop + 1}] -> {status} {str(getattr(r, 'url', current_url))[:120]}"
+                )
+                if status in (301, 302, 303, 307, 308):
+                    location = normalize_flow_url(
+                        r.headers.get("Location", ""), auth_base=self.oauth_issuer
+                    )
+                    if location:
+                        current_referer = str(getattr(r, "url", current_url) or current_url)
+                        current_url = location
+                        continue
+                if status == 200 and "text/html" in content_type:
+                    return str(getattr(r, "text", "") or "")
+            except Exception as e:
+                self._log(f"consent fetch 异常: {e}")
+                break
         return ""
 
     def _extract_session_data_from_consent_html(self, html):
