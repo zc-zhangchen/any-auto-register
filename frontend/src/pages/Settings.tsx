@@ -1438,6 +1438,16 @@ function OutlookImportSection() {
   const [value, setValue] = useState('')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<any | null>(null)
+  const [count, setCount] = useState<number | null>(null)
+
+  const fetchCount = async () => {
+    try {
+      const res = await apiFetch('/outlook/count')
+      setCount(res.count)
+    } catch {}
+  }
+
+  useEffect(() => { fetchCount() }, [])
 
   const handleSubmit = async () => {
     const payload = String(value || '').trim()
@@ -1453,6 +1463,7 @@ function OutlookImportSection() {
       })
       setResult(res)
       msg.success(`导入完成：成功 ${res.success} / 失败 ${res.failed}`)
+      fetchCount()
     } catch (e: any) {
       msg.error(e?.message || '导入失败')
       setResult({ error: e?.message || String(e) })
@@ -1463,7 +1474,7 @@ function OutlookImportSection() {
 
   return (
     <Card
-      title="Outlook 批量导入"
+      title={<>Outlook 批量导入{count !== null && <span style={{ fontSize: 13, fontWeight: 400, color: '#7a8ba3', marginLeft: 8 }}>已导入 {count} 个</span>}</>}
       extra={<span style={{ fontSize: 12, color: '#7a8ba3' }}>每行格式：邮箱----密码 或 邮箱----密码----client_id----refresh_token</span>}
       style={{ marginBottom: 16 }}
     >
