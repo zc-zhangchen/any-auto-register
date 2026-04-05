@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { App, Card, Form, Input, Select, Button, message, Tabs, Space, Tag, Typography, Modal, QRCode, Switch, Alert } from 'antd'
 import {
   SaveOutlined,
@@ -236,6 +236,7 @@ const TAB_ITEMS = [
         title: 'CPA 面板',
         desc: '注册完成后自动上传到 CPA 管理平台',
         fields: [
+          { key: 'cpa_enabled', label: '启用自动上传', type: 'boolean' },
           { key: 'cpa_api_url', label: 'API URL', placeholder: 'https://your-cpa.example.com' },
           { key: 'cpa_api_key', label: 'API Key', secret: true },
         ],
@@ -244,6 +245,7 @@ const TAB_ITEMS = [
         title: 'Sub2API 面板',
         desc: '注册完成后自动上传到 Sub2API 管理后台',
         fields: [
+          { key: 'sub2api_enabled', label: '启用自动上传', type: 'boolean' },
           { key: 'sub2api_api_url', label: 'API URL', placeholder: 'https://your-sub2api.example.com' },
           { key: 'sub2api_api_key', label: 'API Key', secret: true },
           { key: 'sub2api_group_ids', label: '分组 ID', placeholder: '多个分组用英文逗号分隔，例如 2,4,8' },
@@ -401,6 +403,52 @@ interface AppleMailPoolSnapshot {
   truncated: boolean
 }
 
+const MAILBOX_SECTION_FIELD_KEY_BY_PROVIDER: Record<string, string> = {
+  laoudo: 'laoudo_email',
+  freemail: 'freemail_api_url',
+  moemail: 'moemail_api_url',
+  skymail: 'skymail_api_base',
+  cloudmail: 'cloudmail_api_base',
+  maliapi: 'maliapi_base_url',
+  applemail: 'applemail_base_url',
+  gptmail: 'gptmail_base_url',
+  opentrashmail: 'opentrashmail_api_url',
+  duckmail: 'duckmail_api_url',
+  cfworker: 'cfworker_api_url',
+  luckmail: 'luckmail_base_url',
+}
+
+const MAILBOX_SECTION_INDEX_BY_PROVIDER: Record<string, number> = {
+  tempmail_lol: 10,
+}
+
+function splitMailboxSections(sections: SectionConfig[], mailProvider: string) {
+  const defaultSection = sections[0] || null
+  let selectedSection: SectionConfig | null = null
+
+  const byIndex = MAILBOX_SECTION_INDEX_BY_PROVIDER[mailProvider]
+  if (Number.isInteger(byIndex)) {
+    selectedSection = sections[byIndex] || null
+  } else {
+    const fieldKey = MAILBOX_SECTION_FIELD_KEY_BY_PROVIDER[mailProvider]
+    if (fieldKey) {
+      selectedSection = sections.find((section) => section.fields.some((field) => field.key === fieldKey)) || null
+    }
+  }
+
+  if (selectedSection === defaultSection) {
+    selectedSection = null
+  }
+
+  const remainingSections = sections.filter((section) => section !== defaultSection && section !== selectedSection)
+
+  return {
+    defaultSection,
+    selectedSection,
+    remainingSections,
+  }
+}
+
 function formatResultText(data: unknown) {
   if (typeof data === 'string') return data
   try {
@@ -443,6 +491,12 @@ function parseStoredDomainList(value: unknown): string[] {
       .flatMap((line) => line.split(','))
       .map((item) => item.trim()),
   )
+}
+
+function resolveFeatureEnabledConfig(value: unknown, fallbackEnabled: boolean): boolean {
+  const normalized = String(value ?? '').trim()
+  if (!normalized) return fallbackEnabled
+  return parseBooleanConfigValue(normalized)
 }
 
 const CONTRIBUTION_REDEEM_OPTIONS = [10, 100, 1000]
@@ -881,6 +935,7 @@ function IntegrationsPanel() {
   const [items, setItems] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState('')
+  const saved = false
   const [resultModal, setResultModal] = useState({
     open: false,
     title: '',
@@ -948,6 +1003,36 @@ function IntegrationsPanel() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {false ? (
+        <div
+          style={{
+            position: 'fixed',
+            left: '50%',
+            bottom: 24,
+            transform: 'translateX(-50%)',
+            zIndex: 1000,
+            width: 'min(720px, calc(100vw - 32px))',
+            pointerEvents: 'none',
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              padding: 0,
+              borderRadius: 0,
+              border: 'none',
+              background: 'transparent',
+              boxShadow: 'none',
+              backdropFilter: 'none',
+              pointerEvents: 'auto',
+            }}
+          >
+            <Button type="primary" icon={<SaveOutlined />} onClick={() => {}} loading={false} block size="large">
+              {saved ? '已保存 ✓' : '保存配置'}
+            </Button>
+          </div>
+        </div>
+      ) : null}
       <Modal
         open={resultModal.open}
         title={resultModal.title}
@@ -1665,6 +1750,10 @@ export default function Settings() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [activeTab, setActiveTab] = useState('register')
+  const currentMailProvider = String(Form.useWatch('mail_provider', form) || '')
+  const showFloatingSaveButton = activeTab === 'mailbox' || activeTab === 'chatgpt'
+  const contentPaneRef = useRef<HTMLDivElement | null>(null)
+  const [floatingSaveBounds, setFloatingSaveBounds] = useState<{ left: number; width: number } | null>(null)
 
   useEffect(() => {
     apiFetch('/config').then((data) => {
@@ -1695,6 +1784,14 @@ export default function Settings() {
       if (!data.cloudmail_timeout) {
         data.cloudmail_timeout = 30
       }
+      data.cpa_enabled = resolveFeatureEnabledConfig(
+        data.cpa_enabled,
+        Boolean(String(data.cpa_api_url ?? '').trim()),
+      )
+      data.sub2api_enabled = resolveFeatureEnabledConfig(
+        data.sub2api_enabled,
+        Boolean(String(data.sub2api_api_url ?? '').trim() && String(data.sub2api_api_key ?? '').trim()),
+      )
       data.cfworker_domains = parseStoredDomainList(data.cfworker_domains)
       data.cfworker_enabled_domains = parseStoredDomainList(data.cfworker_enabled_domains)
       data.cfworker_random_subdomain = parseBooleanConfigValue(data.cfworker_random_subdomain)
@@ -1703,6 +1800,39 @@ export default function Settings() {
       form.setFieldsValue(data)
     })
   }, [form])
+
+  useEffect(() => {
+    if (!showFloatingSaveButton) {
+      setFloatingSaveBounds(null)
+      return
+    }
+
+    const element = contentPaneRef.current
+    if (!element) return
+
+    const updateBounds = () => {
+      const rect = element.getBoundingClientRect()
+      setFloatingSaveBounds({
+        left: rect.left,
+        width: rect.width,
+      })
+    }
+
+    updateBounds()
+
+    const observer =
+      typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(() => updateBounds())
+        : null
+
+    observer?.observe(element)
+    window.addEventListener('resize', updateBounds)
+
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('resize', updateBounds)
+    }
+  }, [showFloatingSaveButton, activeTab])
 
   const save = async () => {
     setSaving(true)
@@ -1722,12 +1852,16 @@ export default function Settings() {
       if (domains.length > 0) {
         values.cfworker_domain = ''
       }
+      values.cpa_enabled = parseBooleanConfigValue(values.cpa_enabled)
+      values.sub2api_enabled = parseBooleanConfigValue(values.sub2api_enabled)
       values.cfworker_random_subdomain = parseBooleanConfigValue(values.cfworker_random_subdomain)
       values.cfworker_random_name_subdomain = parseBooleanConfigValue(values.cfworker_random_name_subdomain)
       values.contribution_enabled = parseBooleanConfigValue(values.contribution_enabled)
 
       await apiFetch('/config', { method: 'PUT', body: JSON.stringify({ data: values }) })
       form.setFieldsValue({
+        cpa_enabled: values.cpa_enabled,
+        sub2api_enabled: values.sub2api_enabled,
         cfworker_domains: domains,
         cfworker_enabled_domains: enabledDomains,
         cfworker_domain: domains.length > 0 ? '' : values.cfworker_domain,
@@ -1744,9 +1878,47 @@ export default function Settings() {
   }
 
   const currentTab = TAB_ITEMS.find((t) => t.key === activeTab) as TabConfig
+  const mailboxSections =
+    activeTab === 'mailbox'
+      ? splitMailboxSections(currentTab.sections, currentMailProvider)
+      : { defaultSection: null, selectedSection: null, remainingSections: currentTab.sections }
+  const floatingSaveWidth = floatingSaveBounds ? Math.max(floatingSaveBounds.width, 0) : 0
+  const floatingSaveLeft =
+    floatingSaveBounds && floatingSaveWidth > 0
+      ? floatingSaveBounds.left + (floatingSaveBounds.width - floatingSaveWidth) / 2
+      : 0
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, paddingBottom: showFloatingSaveButton ? 96 : 0 }}>
+      {showFloatingSaveButton && floatingSaveBounds && floatingSaveWidth > 0 ? (
+        <div
+          style={{
+            position: 'fixed',
+            left: floatingSaveLeft,
+            bottom: 24,
+            zIndex: 1000,
+            width: floatingSaveWidth,
+            pointerEvents: 'none',
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              padding: 0,
+              borderRadius: 0,
+              border: 'none',
+              background: 'transparent',
+              boxShadow: 'none',
+              backdropFilter: 'none',
+              pointerEvents: 'auto',
+            }}
+          >
+            <Button type="primary" icon={<SaveOutlined />} onClick={save} loading={saving} block>
+              {saved ? '已保存 ✓' : '保存配置'}
+            </Button>
+          </div>
+        </div>
+      ) : null}
       <div>
         <h1 style={{ fontSize: 24, fontWeight: 'bold', margin: 0 }}>全局配置</h1>
         <p style={{ color: '#7a8ba3', marginTop: 4 }}>配置将持久化保存，注册任务自动使用</p>
@@ -1770,7 +1942,7 @@ export default function Settings() {
           />
         </div>
 
-        <div style={{ flex: 1 }}>
+        <div ref={contentPaneRef} style={{ flex: 1 }}>
           {activeTab === 'integrations' ? (
             <IntegrationsPanel />
           ) : activeTab === 'security' ? (
@@ -1782,15 +1954,35 @@ export default function Settings() {
               ) : (
                 <>
                   {activeTab === 'captcha' ? <SolverStatus /> : null}
-                  {currentTab.sections.map((section) => (
-                    <ConfigSection key={section.title} section={section} />
-                  ))}
-                  {activeTab === 'mailbox' ? <AppleMailPoolImportSection form={form} /> : null}
-                  {activeTab === 'mailbox' ? <CFWorkerDomainPoolSection form={form} /> : null}
-                  {activeTab === 'mailbox' ? <OutlookImportSection /> : null}
-                  <Button type="primary" icon={<SaveOutlined />} onClick={save} loading={saving} block>
+                  {activeTab === 'mailbox' ? (
+                    <>
+                      {mailboxSections.defaultSection ? (
+                        <ConfigSection key={mailboxSections.defaultSection.title} section={mailboxSections.defaultSection} />
+                      ) : null}
+                      {mailboxSections.selectedSection ? (
+                        <ConfigSection key={`${mailboxSections.selectedSection.title}-selected`} section={mailboxSections.selectedSection} />
+                      ) : null}
+                      {currentMailProvider === 'applemail' ? <AppleMailPoolImportSection form={form} /> : null}
+                      {currentMailProvider === 'cfworker' ? <CFWorkerDomainPoolSection form={form} /> : null}
+                      {currentMailProvider === 'outlook' ? <OutlookImportSection /> : null}
+                      {mailboxSections.remainingSections.map((section) => (
+                        <ConfigSection key={section.title} section={section} />
+                      ))}
+                      {currentMailProvider !== 'applemail' ? <AppleMailPoolImportSection form={form} /> : null}
+                      {currentMailProvider !== 'cfworker' ? <CFWorkerDomainPoolSection form={form} /> : null}
+                      {currentMailProvider !== 'outlook' ? <OutlookImportSection /> : null}
+                    </>
+                  ) : (
+                    currentTab.sections.map((section) => (
+                      <ConfigSection key={section.title} section={section} />
+                    ))
+                  )}
+                  {showFloatingSaveButton ? <div style={{ height: 8 }} /> : null}
+                  {!showFloatingSaveButton ? (
+                    <Button type="primary" icon={<SaveOutlined />} onClick={save} loading={saving} block>
                     {saved ? '已保存 ✓' : '保存配置'}
-                  </Button>
+                    </Button>
+                  ) : null}
                 </>
               )}
             </Form>

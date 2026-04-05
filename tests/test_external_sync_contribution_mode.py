@@ -88,6 +88,61 @@ class ExternalSyncContributionModeTests(unittest.TestCase):
         upload_mock.assert_called_once_with(account)
         persist_mock.assert_called_once_with(account, True, "ok")
 
+    def test_cpa_disabled_skips_auto_upload_but_keeps_configuration(self):
+        account = DummyAccount()
+        cfg = {
+            "contribution_enabled": "0",
+            "cpa_enabled": "0",
+            "cpa_api_url": "http://cpa.local",
+        }
+
+        with mock.patch("core.config_store.config_store.get", side_effect=_config_getter(cfg)):
+            with mock.patch("services.external_sync.upload_chatgpt_account_to_cpa") as upload_mock:
+                with mock.patch("services.external_sync.persist_cpa_sync_result") as persist_mock:
+                    result = sync_account(account)
+
+        self.assertEqual(result, [])
+        upload_mock.assert_not_called()
+        persist_mock.assert_not_called()
+
+    def test_sub2api_enabled_uploads_and_persists_sync_status(self):
+        account = DummyAccount()
+        cfg = {
+            "contribution_enabled": "0",
+            "sub2api_enabled": "1",
+            "sub2api_api_url": "http://sub2api.local",
+            "sub2api_api_key": "sub2-key",
+        }
+
+        with mock.patch("core.config_store.config_store.get", side_effect=_config_getter(cfg)):
+            with mock.patch("platforms.chatgpt.sub2api_upload.upload_to_sub2api", return_value=(True, "ok")) as upload_mock:
+                with mock.patch("services.external_sync.persist_sub2api_sync_result") as persist_mock:
+                    result = sync_account(account)
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["name"], "Sub2API")
+        self.assertTrue(result[0]["ok"])
+        upload_mock.assert_called_once()
+        persist_mock.assert_called_once_with(account, True, "ok")
+
+    def test_sub2api_disabled_skips_auto_upload_but_keeps_configuration(self):
+        account = DummyAccount()
+        cfg = {
+            "contribution_enabled": "0",
+            "sub2api_enabled": "0",
+            "sub2api_api_url": "http://sub2api.local",
+            "sub2api_api_key": "sub2-key",
+        }
+
+        with mock.patch("core.config_store.config_store.get", side_effect=_config_getter(cfg)):
+            with mock.patch("platforms.chatgpt.sub2api_upload.upload_to_sub2api") as upload_mock:
+                with mock.patch("services.external_sync.persist_sub2api_sync_result") as persist_mock:
+                    result = sync_account(account)
+
+        self.assertEqual(result, [])
+        upload_mock.assert_not_called()
+        persist_mock.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

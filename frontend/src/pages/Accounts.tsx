@@ -60,9 +60,11 @@ function parseExtraJson(raw: string | undefined) {
 function normalizeAccount(account: any) {
   const extra = parseExtraJson(account.extra_json)
   const syncStatuses = extra.sync_statuses && typeof extra.sync_statuses === 'object' ? extra.sync_statuses : {}
+  const cpaSync = syncStatuses.cpa && typeof syncStatuses.cpa === 'object' ? syncStatuses.cpa : {}
+  const sub2apiSync = syncStatuses.sub2api && typeof syncStatuses.sub2api === 'object' ? syncStatuses.sub2api : {}
   const cliproxySync = syncStatuses.cliproxyapi && typeof syncStatuses.cliproxyapi === 'object' ? syncStatuses.cliproxyapi : {}
   const chatgptLocal = extra.chatgpt_local && typeof extra.chatgpt_local === 'object' ? extra.chatgpt_local : {}
-  return { ...account, extra, cliproxySync, chatgptLocal }
+  return { ...account, extra, cpaSync, sub2apiSync, cliproxySync, chatgptLocal }
 }
 
 function formatSyncTime(value?: string) {
@@ -302,6 +304,40 @@ function cliproxyStateMeta(sync: any) {
     return { color: 'default', label: '远端禁用' }
   }
   return { color: 'default', label: '未同步' }
+}
+
+function uploadSyncMeta(sync: any) {
+  if (!sync || Object.keys(sync).length === 0) {
+    return { color: 'default', label: '未上传' }
+  }
+  if (sync.uploaded || sync.uploaded_at) {
+    return { color: 'success', label: '已上传' }
+  }
+  if (sync.last_attempt_ok === false) {
+    return { color: 'error', label: '失败' }
+  }
+  if (sync.last_attempt_ok === true || sync.last_attempt_at) {
+    return { color: 'processing', label: '已尝试' }
+  }
+  return { color: 'default', label: '未上传' }
+}
+
+function uploadSyncTitle(name: string, sync: any) {
+  if (!sync || Object.keys(sync).length === 0) {
+    return `${name} 未上传`
+  }
+
+  const parts: string[] = []
+  if (sync.uploaded_at) {
+    parts.push(`成功时间: ${formatSyncTime(sync.uploaded_at)}`)
+  }
+  if (sync.last_attempt_at) {
+    parts.push(`最近尝试: ${formatSyncTime(sync.last_attempt_at)}`)
+  }
+  if (sync.last_message) {
+    parts.push(`结果: ${sync.last_message}`)
+  }
+  return parts.join('\n') || `${name} 已记录状态`
 }
 
 function CliproxySyncSummary({ sync }: { sync: any }) {
@@ -1011,14 +1047,18 @@ export default function Accounts() {
       {
         title: '本地状态',
         key: 'chatgpt_local_state',
-        width: 220,
+        width: 320,
         render: (_: any, record: any) => {
           const auth = record.chatgptLocal?.auth || {}
           const subscription = record.chatgptLocal?.subscription || {}
           const codex = record.chatgptLocal?.codex || {}
+          const cpaSync = record.cpaSync || {}
+          const sub2apiSync = record.sub2apiSync || {}
           const authMeta = authStateMeta(auth.state)
           const planTag = planMeta(subscription.plan)
           const codexMeta = codexStateMeta(codex.state)
+          const cpaMeta = uploadSyncMeta(cpaSync)
+          const sub2apiMeta = uploadSyncMeta(sub2apiSync)
 
           return (
             <div style={{ ...cellStackStyle, ...compactPanelStyle }}>
@@ -1026,6 +1066,14 @@ export default function Accounts() {
                 <Tag color={authMeta.color}>{authMeta.label}</Tag>
                 <Tag color={planTag.color}>{planTag.label}</Tag>
                 <Tag color={codexMeta.color}>Codex {codexMeta.label}</Tag>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                <Tag color={cpaMeta.color} title={uploadSyncTitle('CPA', cpaSync)}>
+                  CPA {cpaMeta.label}
+                </Tag>
+                <Tag color={sub2apiMeta.color} title={uploadSyncTitle('Sub2API', sub2apiSync)}>
+                  Sub2API {sub2apiMeta.label}
+                </Tag>
               </div>
             </div>
           )

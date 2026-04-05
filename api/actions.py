@@ -86,6 +86,17 @@ def _apply_action_result(
             session=session,
             commit=False,
         )
+    if platform == "chatgpt" and action_id == "upload_sub2api":
+        from services.chatgpt_sync import update_account_model_sub2api_sync
+
+        sync_msg = result.get("data") or result.get("error") or ""
+        update_account_model_sub2api_sync(
+            acc_model,
+            bool(result.get("ok")),
+            str(sync_msg),
+            session=session,
+            commit=False,
+        )
     if result.get("ok") and result.get("data", {}) and isinstance(result["data"], dict):
         data = result["data"]
         tracked_keys = {"access_token", "accessToken", "refreshToken", "clientId", "clientSecret", "webAccessToken"}

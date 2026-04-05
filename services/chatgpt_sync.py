@@ -11,6 +11,7 @@ from core.db import AccountModel, engine
 from services.chatgpt_account_state import apply_chatgpt_status_policy
 
 CPA_SYNC_NAME = "cpa"
+SUB2API_SYNC_NAME = "sub2api"
 CLIPROXY_SYNC_NAME = "cliproxyapi"
 
 
@@ -60,13 +61,21 @@ def _get_account_extra(account: Any) -> dict[str, Any]:
     return extra if isinstance(extra, dict) else {}
 
 
-def get_cpa_sync_state(extra_or_account: Any) -> dict[str, Any]:
+def _get_sync_state(extra_or_account: Any, sync_name: str) -> dict[str, Any]:
     extra = extra_or_account if isinstance(extra_or_account, dict) else _get_account_extra(extra_or_account)
     sync_statuses = extra.get("sync_statuses", {})
     if not isinstance(sync_statuses, dict):
         return {}
-    state = sync_statuses.get(CPA_SYNC_NAME, {})
+    state = sync_statuses.get(sync_name, {})
     return state if isinstance(state, dict) else {}
+
+
+def get_cpa_sync_state(extra_or_account: Any) -> dict[str, Any]:
+    return _get_sync_state(extra_or_account, CPA_SYNC_NAME)
+
+
+def get_sub2api_sync_state(extra_or_account: Any) -> dict[str, Any]:
+    return _get_sync_state(extra_or_account, SUB2API_SYNC_NAME)
 
 
 def has_cpa_upload_success(extra_or_account: Any) -> bool:
@@ -83,12 +92,12 @@ def get_cliproxy_sync_state(extra_or_account: Any) -> dict[str, Any]:
     return state if isinstance(state, dict) else {}
 
 
-def record_cpa_sync_result(extra: dict[str, Any], ok: bool, msg: str) -> dict[str, Any]:
+def _record_sync_result(extra: dict[str, Any], sync_name: str, ok: bool, msg: str) -> dict[str, Any]:
     sync_statuses = extra.get("sync_statuses")
     if not isinstance(sync_statuses, dict):
         sync_statuses = {}
 
-    state = sync_statuses.get(CPA_SYNC_NAME)
+    state = sync_statuses.get(sync_name)
     if not isinstance(state, dict):
         state = {}
 
@@ -100,9 +109,17 @@ def record_cpa_sync_result(extra: dict[str, Any], ok: bool, msg: str) -> dict[st
     if ok:
         state["uploaded_at"] = now
 
-    sync_statuses[CPA_SYNC_NAME] = state
+    sync_statuses[sync_name] = state
     extra["sync_statuses"] = sync_statuses
     return state
+
+
+def record_cpa_sync_result(extra: dict[str, Any], ok: bool, msg: str) -> dict[str, Any]:
+    return _record_sync_result(extra, CPA_SYNC_NAME, ok, msg)
+
+
+def record_sub2api_sync_result(extra: dict[str, Any], ok: bool, msg: str) -> dict[str, Any]:
+    return _record_sync_result(extra, SUB2API_SYNC_NAME, ok, msg)
 
 
 def record_cliproxy_sync_result(extra: dict[str, Any], sync_result: dict[str, Any]) -> dict[str, Any]:
@@ -165,6 +182,25 @@ def update_account_model_cpa_sync(
     return state
 
 
+def update_account_model_sub2api_sync(
+    account: AccountModel,
+    ok: bool,
+    msg: str,
+    session: Session | None = None,
+    commit: bool = True,
+) -> dict[str, Any]:
+    extra = account.get_extra()
+    state = record_sub2api_sync_result(extra, ok, msg)
+    account.set_extra(extra)
+    account.updated_at = _utcnow()
+    if session is not None:
+        session.add(account)
+        if commit:
+            session.commit()
+            session.refresh(account)
+    return state
+
+
 def update_account_model_cliproxy_sync(
     account: AccountModel,
     sync_result: dict[str, Any],
@@ -214,6 +250,19 @@ def persist_cpa_sync_result(account: Any, ok: bool, msg: str) -> None:
     extra = getattr(account, "extra", None)
     if isinstance(extra, dict):
         record_cpa_sync_result(extra, ok, msg)
+
+
+def persist_sub2api_sync_result(account: Any, ok: bool, msg: str) -> None:
+    if isinstance(account, AccountModel) and account.id is not None:
+        with Session(engine) as session:
+            row = session.get(AccountModel, account.id)
+            if row:
+                update_account_model_sub2api_sync(row, ok, msg, session=session, commit=True)
+                return
+
+    extra = getattr(account, "extra", None)
+    if isinstance(extra, dict):
+        record_sub2api_sync_result(extra, ok, msg)
 
 
 def upload_account_model_to_cpa(
