@@ -46,6 +46,7 @@ CONFIG_KEYS = [
     "gptmail_base_url",
     "gptmail_api_key",
     "gptmail_domain",
+    "tempmailorg_api_url",
     "opentrashmail_api_url",
     "opentrashmail_domain",
     "opentrashmail_password",
@@ -124,6 +125,8 @@ def get_config():
         all_cfg["applemail_mailboxes"] = "INBOX,Junk"
     if not all_cfg.get("gptmail_base_url"):
         all_cfg["gptmail_base_url"] = "https://mail.chatgpt.org.uk"
+    if not all_cfg.get("tempmailorg_api_url"):
+        all_cfg["tempmailorg_api_url"] = "https://web2.temp-mail.org"
     if not all_cfg.get("luckmail_base_url"):
         all_cfg["luckmail_base_url"] = "https://mails.luckyous.com/"
     if not all_cfg.get("contribution_server_url"):
@@ -142,9 +145,15 @@ def update_config(body: ConfigUpdate):
 
 @router.post("/applemail/import")
 def import_applemail_pool(body: AppleMailImportRequest):
-    from core.applemail_pool import load_applemail_pool_snapshot, save_applemail_pool_json
+    from core.applemail_pool import (
+        load_applemail_pool_snapshot,
+        save_applemail_pool_json,
+    )
 
-    pool_dir = str(body.pool_dir or config_store.get("applemail_pool_dir", "mail")).strip() or "mail"
+    pool_dir = (
+        str(body.pool_dir or config_store.get("applemail_pool_dir", "mail")).strip()
+        or "mail"
+    )
     result = save_applemail_pool_json(
         body.content,
         pool_dir=pool_dir,
@@ -180,8 +189,13 @@ def get_applemail_pool_snapshot(
 ):
     from core.applemail_pool import load_applemail_pool_snapshot
 
-    resolved_pool_dir = str(pool_dir or config_store.get("applemail_pool_dir", "mail")).strip() or "mail"
-    resolved_pool_file = str(pool_file or config_store.get("applemail_pool_file", "")).strip()
+    resolved_pool_dir = (
+        str(pool_dir or config_store.get("applemail_pool_dir", "mail")).strip()
+        or "mail"
+    )
+    resolved_pool_file = str(
+        pool_file or config_store.get("applemail_pool_file", "")
+    ).strip()
     try:
         snapshot = load_applemail_pool_snapshot(
             pool_file=resolved_pool_file,

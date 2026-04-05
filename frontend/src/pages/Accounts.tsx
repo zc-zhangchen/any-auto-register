@@ -732,6 +732,7 @@ export default function Accounts() {
         gptmail_base_url: cfg.gptmail_base_url,
         gptmail_api_key: cfg.gptmail_api_key,
         gptmail_domain: cfg.gptmail_domain,
+        tempmailorg_api_url: cfg.tempmailorg_api_url || 'https://web2.temp-mail.org',
         maliapi_base_url: cfg.maliapi_base_url,
         maliapi_api_key: cfg.maliapi_api_key,
         maliapi_domain: cfg.maliapi_domain,
