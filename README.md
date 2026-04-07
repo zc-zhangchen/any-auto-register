@@ -81,8 +81,8 @@
 ## 环境要求
 
 - Python 3.12+
-- Node.js 18+
-- Conda（推荐）
+- Node.js 18+ / pnpm 10+
+- uv（推荐）或 Conda（兼容旧流程）
 - Windows（推荐直接使用仓库内启动脚本）
 
 ## ChatGPT 专项能力
@@ -132,6 +132,33 @@
 | SkyMail (CloudMail) | `skymail` | 通过 API / Token / 域名使用 |
 | YYDS Mail / MaliAPI | `maliapi` | 支持域名与自动域名策略 |
 | GPTMail | `gptmail` | 基于 GPTMail API 生成临时邮箱并轮询邮件，支持已知域名时本地拼装随机地址 |
+| Cloudflare 邮件路由 | `cfrouting` | 不走 Worker；假设你已在 Cloudflare 配好邮件路由转发，本项目只负责生成别名并直接轮询目标邮箱 IMAP，目标邮箱可用 QQ 或个人 Gmail |
+
+### Cloudflare 邮件路由（QQ / Gmail）
+
+`cfrouting` 的思路是：
+
+- Cloudflare 负责把 `随机别名@你的域名` 转发到你的真实邮箱
+- 本项目只负责生成别名，并通过 IMAP 去真实邮箱里抓验证码
+
+常见填写方式：
+
+- QQ 邮箱
+  - `IMAP Server`: `imap.qq.com`
+  - `IMAP Port`: `993`
+  - `用户名`: 你的 QQ 邮箱完整地址
+  - `密码`: QQ 邮箱授权码
+- 个人 Gmail
+  - `IMAP Server`: `imap.gmail.com`
+  - `IMAP Port`: `993`
+  - `用户名`: 你的 Gmail 完整地址
+  - `密码`: Google App Password
+
+说明：
+
+- 个人 Gmail 不必先接 OAuth；对本项目这种普通 IMAP 登录，通常直接使用 `App Password` 即可。
+- QQ 和 Gmail 都建议先把 `轮询文件夹` 留成 `INBOX`，确认邮件实际落点后再调整。
+- 如果你已经确认 QQ 网页端能很快看到邮件，但 IMAP 抓取明显滞后，优先考虑改用 Gmail 作为 Cloudflare 转发目标。
 | DuckMail | `duckmail` | 临时邮箱方案 |
 | Freemail | `freemail` | 自建邮箱服务 |
 | Laoudo | `laoudo` | 固定邮箱方案 |
@@ -148,33 +175,39 @@ Kiro 当前风控较严格，邮箱方案会显著影响成功率。当前项目
 
 ## 快速开始
 
-### 1. 创建并激活 Conda 环境
+### 1. 安装并同步后端依赖（uv）
 
 ```bash
-conda create -n any-auto-register python=3.12 -y
-conda activate any-auto-register
+uv python install 3.12
+uv sync
 ```
 
-### 2. 安装后端依赖
+项目现已提供 `pyproject.toml` 和 `uv.lock`，后续新增 Python 依赖请优先使用：
 
 ```bash
-pip install -r requirements.txt
+uv add <package>
 ```
 
-### 3. 安装浏览器相关依赖
+不要再使用 `uv pip install`。
+
+### 2. 安装浏览器相关依赖
 
 ```bash
-python -m playwright install chromium
-python -m camoufox fetch
+uv run python -m playwright install chromium
+uv run python -m camoufox fetch
 ```
 
-### 4. 安装并构建前端
+### 3. 安装并构建前端
+
+如本机还没有 `pnpm`，可先执行：
 
 ```bash
-cd frontend
-npm install
-npm run build
-cd ..
+corepack enable
+```
+
+```bash
+pnpm --dir frontend install --frozen-lockfile
+pnpm --dir frontend build
 ```
 
 构建完成后，静态资源输出到：
@@ -183,7 +216,7 @@ cd ..
 ./static
 ```
 
-### 5. 启动项目
+### 4. 启动项目
 
 #### Windows 推荐方式
 
@@ -199,11 +232,12 @@ CMD：
 start_backend.bat
 ```
 
+这两个脚本会优先使用仓库根目录下由 `uv sync` 创建的 `.venv`；如果 `.venv` 不存在，再回退到 `any-auto-register` 这个 conda 环境。
+
 #### 手动启动
 
 ```bash
-conda activate any-auto-register
-python main.py
+uv run python main.py
 ```
 
 启动后默认访问：
@@ -212,7 +246,7 @@ python main.py
 http://localhost:8000
 ```
 
-> 如果你已经执行过 `npm run build`，前端会由 FastAPI 直接托管，因此访问的是 `8000`，不是 `5173`。
+> 如果你已经执行过 `pnpm --dir frontend build`，前端会由 FastAPI 直接托管，因此访问的是 `8000`，不是 `5173`。
 
 ## Windows 启动脚本说明
 
@@ -223,7 +257,7 @@ http://localhost:8000
 - `stop_backend.bat`
 - `stop_backend.ps1`
 
-这些脚本会强制使用 `any-auto-register` 环境启动/停止后端，可避免以下常见问题：
+这些脚本会优先使用仓库根目录 `.venv`，否则回退到 `any-auto-register` conda 环境启动/停止后端，可避免以下常见问题：
 
 - 后端能启动，但 Solver 没有拉起
 - `ModuleNotFoundError: quart`
@@ -261,8 +295,7 @@ stop_backend.bat
 ### 终端 2：启动 Vite
 
 ```bash
-cd frontend
-npm run dev
+pnpm --dir frontend dev
 ```
 
 访问地址：
@@ -286,13 +319,12 @@ http://localhost:8889
 前端“全局配置 → 验证码 → Turnstile Solver”显示的是**后端检测结果**，因此：
 
 - 后端未启动 → 前端显示“未运行”
-- 后端已启动但不在正确 conda 环境 → Solver 可能启动失败
+- 后端已启动但不在正确 `.venv` / conda 环境 → Solver 可能启动失败
 
 ### 手动启动 Solver
 
 ```bash
-conda activate any-auto-register
-python services/turnstile_solver/start.py --browser_type camoufox --port 8889
+uv run python services/turnstile_solver/start.py --browser_type camoufox --port 8889
 ```
 
 ### Solver 日志
@@ -434,7 +466,7 @@ curl http://localhost:8000/api/solver/status
 
 ### 2. 出现 `ModuleNotFoundError: quart`
 
-说明当前启动后端的 Python 不是 `any-auto-register` 环境，请改用：
+说明当前启动后端的 Python 不是仓库 `.venv` 或 `any-auto-register` conda 环境，请改用：
 
 ```powershell
 .\start_backend.ps1
@@ -453,6 +485,12 @@ python -c "import sys; print(sys.executable)"
 ```
 
 输出应类似：
+
+```text
+D:\github\any-auto-register\.venv\Scripts\python.exe
+```
+
+或：
 
 ```text
 D:\miniconda\conda3\envs\any-auto-register\python.exe

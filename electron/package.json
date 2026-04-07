@@ -1,6 +1,7 @@
 {
   "name": "any-auto-register",
   "version": "1.0.0",
+  "packageManager": "pnpm@10.14.0",
   "description": "Any Auto Register - 多平台账号自动注册管理工具",
   "main": "main.js",
   "scripts": {
