@@ -12,7 +12,7 @@ from core.task_runtime import (
     SkipCurrentAttemptRequested,
     StopTaskRequested,
 )
-import time, json, asyncio, threading, logging
+import time, json, asyncio, threading, logging, sys
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 logger = logging.getLogger(__name__)
@@ -119,12 +119,48 @@ def has_active_register_task(
     return _task_store.has_active(platform=platform, source=source)
 
 
+def _write_console_entry(entry: str) -> None:
+    try:
+        print(entry)
+        return
+    except UnicodeEncodeError:
+        pass
+
+    stream = getattr(sys, "stdout", None)
+    if stream is None:
+        return
+
+    encoding = getattr(stream, "encoding", None) or "utf-8"
+    try:
+        safe_entry = entry.encode(encoding, errors="backslashreplace").decode(encoding)
+    except Exception:
+        safe_entry = entry.encode("ascii", errors="backslashreplace").decode("ascii")
+
+    try:
+        stream.write(f"{safe_entry}\n")
+    except UnicodeEncodeError:
+        try:
+            buffer = getattr(stream, "buffer", None)
+            if buffer is None:
+                return
+            buffer.write(safe_entry.encode(encoding, errors="replace") + b"\n")
+        except Exception:
+            return
+    except Exception:
+        return
+
+    try:
+        stream.flush()
+    except Exception:
+        return
+
+
 def _log(task_id: str, msg: str):
     """向任务追加一条日志"""
     ts = time.strftime("%H:%M:%S")
     entry = f"[{ts}] {msg}"
     _task_store.append_log(task_id, entry)
-    print(entry)
+    _write_console_entry(entry)
 
 
 def _save_task_log(
@@ -169,7 +205,9 @@ def _run_register(task_id: str, req: RegisterTaskRequest):
     success = 0
     skipped = 0
     errors = []
+    workspace_success = 0
     start_gate_lock = threading.Lock()
+    workspace_progress_lock = threading.Lock()
     next_start_time = time.time()
 
     def _sleep_with_control(
@@ -201,7 +239,7 @@ def _run_register(task_id: str, req: RegisterTaskRequest):
             )
 
         def _do_one(i: int):
-            nonlocal next_start_time
+            nonlocal next_start_time, workspace_success
             proxy_pool = None
             _proxy = None
             current_email = req.email or ""
@@ -307,6 +345,16 @@ def _run_register(task_id: str, req: RegisterTaskRequest):
                 if _proxy:
                     proxy_pool.report_success(_proxy)
                 _log(task_id, f"[OK] 注册成功: {account.email}")
+                workspace_id = ""
+                if isinstance(account.extra, dict):
+                    workspace_id = str(account.extra.get("workspace_id") or "").strip()
+                if workspace_id:
+                    with workspace_progress_lock:
+                        workspace_success += 1
+                        _log(
+                            task_id,
+                            f"[ChatGPT] workspace\u8fdb\u5ea6: {workspace_success}/{req.count}",
+                        )
                 _save_task_log(req.platform, account.email, "success")
                 _auto_upload_integrations(task_id, saved_account or account)
                 cashier_url = (account.extra or {}).get("cashier_url", "")

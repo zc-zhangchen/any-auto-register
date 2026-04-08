@@ -1,3 +1,5 @@
+import io
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -53,6 +55,27 @@ class _FakePlatform(BasePlatform):
         return True
 
 
+class _EmojiLoggingPlatform(BasePlatform):
+    name = "fake"
+    display_name = "Fake"
+
+    def __init__(self, config=None, mailbox=None):
+        super().__init__(config)
+        self.mailbox = mailbox
+
+    def register(self, email: str, password: str = None) -> Account:
+        if self._log_fn:
+            self._log_fn("\u2705 OAuth 注册成功")
+        return Account(
+            platform="fake",
+            email="emoji@example.com",
+            password=password or "pw",
+        )
+
+    def check_valid(self, account: Account) -> bool:
+        return True
+
+
 class _FakeChatGPTWorkspacePlatform(BasePlatform):
     name = "chatgpt"
     display_name = "ChatGPT"
@@ -79,6 +102,23 @@ class _FakeChatGPTWorkspacePlatform(BasePlatform):
 
     def check_valid(self, account: Account) -> bool:
         return True
+
+
+class _FailingGbkStdout(io.TextIOBase):
+    encoding = "gbk"
+
+    def __init__(self):
+        super().__init__()
+        self.buffer = io.BytesIO()
+
+    def write(self, text):
+        payload = str(text)
+        encoded = payload.encode(self.encoding)
+        self.buffer.write(encoded)
+        return len(payload)
+
+    def flush(self):
+        return None
 
 
 class RegisterTaskControlFlowTests(unittest.TestCase):
@@ -146,6 +186,29 @@ class RegisterTaskControlFlowTests(unittest.TestCase):
 
         self.assertIn("workspace进度: 1/2", joined_logs)
         self.assertIn("workspace进度: 2/2", joined_logs)
+
+
+    def test_emoji_log_does_not_turn_success_into_failure_under_gbk_stdout(self):
+        task_id = "task-gbk-emoji-log"
+        req = self._build_request()
+        _create_task_record(task_id, req, "manual", None)
+        fake_stdout = _FailingGbkStdout()
+
+        with (
+            patch("core.registry.get", return_value=_EmojiLoggingPlatform),
+            patch("core.base_mailbox.create_mailbox", return_value=_FakeMailbox()),
+            patch("core.db.save_account", side_effect=lambda account: account),
+            patch("api.tasks._save_task_log"),
+            patch.object(sys, "stdout", fake_stdout),
+        ):
+            _run_register(task_id, req)
+
+        snapshot = _task_store.snapshot(task_id)
+        joined_logs = "\n".join(snapshot["logs"])
+
+        self.assertEqual(snapshot["status"], "done")
+        self.assertEqual(snapshot["success"], 1)
+        self.assertIn("\u2705 OAuth 注册成功", joined_logs)
 
 
 if __name__ == "__main__":
