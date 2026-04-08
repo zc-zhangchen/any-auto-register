@@ -63,6 +63,24 @@ class OutlookAccountModel(SQLModel, table=True):
     last_used: Optional[datetime] = None
 
 
+class OutlookAccountLeaseModel(SQLModel, table=True):
+    __tablename__ = "outlook_account_leases"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    email: str = Field(index=True, sa_column_kwargs={"unique": True})
+    password: str
+    client_id: str = ""
+    refresh_token: str = ""
+    source_account_id: Optional[int] = Field(default=None, index=True)
+    task_attempt_id: str = Field(default="", index=True)
+    status: str = Field(default="leased", index=True)
+    last_error: str = ""
+    leased_at: datetime = Field(default_factory=_utcnow)
+    last_failed_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
+
+
 class ProxyModel(SQLModel, table=True):
     __tablename__ = "proxies"
 

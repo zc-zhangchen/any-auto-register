@@ -3428,9 +3428,44 @@ class OutlookMailbox(BaseMailbox):
         backend = str(value or "graph").strip().lower() or "graph"
         return backend if backend in {"graph", "imap"} else "graph"
 
+    @staticmethod
+    def _resolve_outlook_lease_id(account: MailboxAccount) -> int | None:
+        extra = getattr(account, "extra", None) or {}
+        raw_value = extra.get("outlook_lease_id")
+        try:
+            lease_id = int(raw_value)
+        except (TypeError, ValueError):
+            return None
+        return lease_id if lease_id > 0 else None
+
+    def _find_leased_account(self, session, account: MailboxAccount):
+        from sqlmodel import select
+        from core.db import OutlookAccountLeaseModel
+
+        lease_id = self._resolve_outlook_lease_id(account)
+        if lease_id is not None:
+            leased = session.get(OutlookAccountLeaseModel, lease_id)
+            if leased is not None:
+                return leased
+
+        email = str(getattr(account, "email", "") or "").strip()
+        if not email:
+            return None
+
+        return session.exec(
+            select(OutlookAccountLeaseModel).where(
+                OutlookAccountLeaseModel.email == email
+            )
+        ).first()
+
     def _pop_account(self) -> dict:
         from sqlmodel import Session, select
-        from core.db import engine, OutlookAccountModel
+        from core.db import (
+            OutlookAccountLeaseModel,
+            OutlookAccountModel,
+            _utcnow,
+            engine,
+        )
 
         with self._lock:
             with Session(engine) as session:
@@ -3445,12 +3480,51 @@ class OutlookMailbox(BaseMailbox):
                 if not account:
                     raise RuntimeError("微软邮箱账号池为空，请先在设置页批量导入")
 
+                now = _utcnow()
+                lease = session.exec(
+                    select(OutlookAccountLeaseModel).where(
+                        OutlookAccountLeaseModel.email == account.email
+                    )
+                ).first()
+                if lease:
+                    lease.password = account.password
+                    lease.client_id = account.client_id
+                    lease.refresh_token = account.refresh_token
+                    lease.source_account_id = account.id
+                    lease.task_attempt_id = str(
+                        getattr(self, "_task_attempt_token", "") or ""
+                    )
+                    lease.status = "leased"
+                    lease.last_error = ""
+                    lease.leased_at = now
+                    lease.last_failed_at = None
+                    lease.updated_at = now
+                    session.add(lease)
+                else:
+                    lease = OutlookAccountLeaseModel(
+                        email=account.email,
+                        password=account.password,
+                        client_id=account.client_id,
+                        refresh_token=account.refresh_token,
+                        source_account_id=account.id,
+                        task_attempt_id=str(
+                            getattr(self, "_task_attempt_token", "") or ""
+                        ),
+                        status="leased",
+                        leased_at=now,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                    session.add(lease)
+                    session.flush()
+
                 payload = {
                     "id": account.id,
                     "email": account.email,
                     "password": account.password,
                     "client_id": account.client_id,
                     "refresh_token": account.refresh_token,
+                    "lease_id": lease.id,
                 }
                 session.delete(account)
                 session.commit()
@@ -3482,12 +3556,56 @@ class OutlookMailbox(BaseMailbox):
                 "client_id": client_id,
                 "refresh_token": refresh_token,
                 "outlook_backend": self._backend_name,
+                "outlook_lease_id": payload.get("lease_id"),
             },
         )
 
+    def mark_account_success(self, account: MailboxAccount) -> None:
+        from sqlmodel import Session
+        from core.db import engine
+
+        email = str(getattr(account, "email", "") or "").strip()
+        if not email:
+            return
+
+        with self._lock:
+            with Session(engine) as session:
+                leased = self._find_leased_account(session, account)
+                if leased is None:
+                    return
+                session.delete(leased)
+                session.commit()
+        self._log(f"[微软邮箱] 账号注册完成，已清理恢复记录: {email}")
+
+    def mark_account_failure(self, account: MailboxAccount, error: str = "") -> None:
+        from sqlmodel import Session
+        from core.db import _utcnow, engine
+
+        email = str(getattr(account, "email", "") or "").strip()
+        if not email:
+            return
+
+        with self._lock:
+            with Session(engine) as session:
+                leased = self._find_leased_account(session, account)
+                if leased is None:
+                    return
+                now = _utcnow()
+                leased.status = "recoverable"
+                leased.last_error = str(error or "")
+                leased.last_failed_at = now
+                leased.updated_at = now
+                session.add(leased)
+                session.commit()
+        self._log(f"[微软邮箱] 账号保留在恢复池中: {email}")
+
     def requeue_account(self, account: MailboxAccount) -> None:
         from sqlmodel import Session, select
-        from core.db import engine, OutlookAccountModel
+        from core.db import (
+            OutlookAccountModel,
+            _utcnow,
+            engine,
+        )
 
         email = str(getattr(account, "email", "") or "").strip()
         extra = getattr(account, "extra", None) or {}
@@ -3500,11 +3618,20 @@ class OutlookMailbox(BaseMailbox):
 
         with self._lock:
             with Session(engine) as session:
+                leased = self._find_leased_account(session, account)
+                if leased is not None:
+                    password = password or str(leased.password or "")
+                    client_id = client_id or str(leased.client_id or "")
+                    refresh_token = refresh_token or str(leased.refresh_token or "")
+
                 existing = session.exec(
                     select(OutlookAccountModel).where(OutlookAccountModel.email == email)
                 ).first()
                 if existing:
                     existing.enabled = True
+                    existing.password = password or existing.password
+                    existing.client_id = client_id or existing.client_id
+                    existing.refresh_token = refresh_token or existing.refresh_token
                     existing.updated_at = _utcnow()
                     session.add(existing)
                 else:
@@ -3519,6 +3646,8 @@ class OutlookMailbox(BaseMailbox):
                             updated_at=_utcnow(),
                         )
                     )
+                if leased is not None:
+                    session.delete(leased)
                 session.commit()
         self._log(f"[微软邮箱] 账号已回退到本地池: {email}")
 

@@ -1,5 +1,7 @@
 import io
 import sys
+import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -98,6 +100,46 @@ class _FakeChatGPTWorkspacePlatform(BasePlatform):
             email=f"user{index}@example.com",
             password=password or "pw",
             extra={"workspace_id": f"ws-{index}"},
+        )
+
+    def check_valid(self, account: Account) -> bool:
+        return True
+
+
+class _AutoPause400Platform(BasePlatform):
+    name = "fake"
+    display_name = "Fake"
+
+    _counter = 0
+    _counter_lock = threading.Lock()
+
+    def __init__(self, config=None, mailbox=None):
+        super().__init__(config)
+        self.mailbox = mailbox
+
+    @classmethod
+    def reset_counter(cls):
+        with cls._counter_lock:
+            cls._counter = 0
+
+    def register(self, email: str, password: str = None) -> Account:
+        with type(self)._counter_lock:
+            type(self)._counter += 1
+            current = type(self)._counter
+
+        if current == 1:
+            time.sleep(0.05)
+            raise RuntimeError("注册失败: 400 - rate limited")
+
+        deadline = time.time() + 2
+        while time.time() < deadline:
+            self._task_control.checkpoint()
+            time.sleep(0.01)
+
+        return Account(
+            platform="fake",
+            email="should-not-complete@example.com",
+            password=password or "pw",
         )
 
     def check_valid(self, account: Account) -> bool:
@@ -209,6 +251,60 @@ class RegisterTaskControlFlowTests(unittest.TestCase):
         self.assertEqual(snapshot["status"], "done")
         self.assertEqual(snapshot["success"], 1)
         self.assertIn("\u2705 OAuth 注册成功", joined_logs)
+
+    def test_http_400_auto_pauses_entire_task_and_logs_risk_message(self):
+        task_id = "task-auto-pause-http-400"
+        req = self._build_request(count=2, concurrency=2)
+        _create_task_record(task_id, req, "manual", None)
+        _AutoPause400Platform.reset_counter()
+
+        with (
+            patch("core.registry.get", return_value=_AutoPause400Platform),
+            patch("core.base_mailbox.create_mailbox", return_value=_FakeMailbox()),
+            patch("core.db.save_account", side_effect=lambda account: account),
+            patch("api.tasks._save_task_log"),
+        ):
+            _run_register(task_id, req)
+
+        snapshot = _task_store.snapshot(task_id)
+        joined_logs = "\n".join(snapshot["logs"])
+
+        self.assertEqual(snapshot["status"], "paused")
+        self.assertEqual(snapshot["success"], 0)
+        self.assertEqual(snapshot["skipped"], 0)
+        self.assertEqual(len(snapshot["errors"]), 1)
+        self.assertIn("400", snapshot["errors"][0])
+        self.assertTrue(snapshot["control"]["pause_requested"])
+        self.assertIn("可能触发风控", snapshot["control"]["pause_reason"])
+        self.assertIn("可能触发风控", joined_logs)
+
+    def test_http_400_auto_pause_can_be_disabled_for_register_task(self):
+        task_id = "task-auto-pause-http-400-disabled"
+        req = self._build_request(
+            count=2,
+            concurrency=2,
+            auto_pause_on_http_400=False,
+        )
+        _create_task_record(task_id, req, "manual", None)
+        _AutoPause400Platform.reset_counter()
+
+        with (
+            patch("core.registry.get", return_value=_AutoPause400Platform),
+            patch("core.base_mailbox.create_mailbox", return_value=_FakeMailbox()),
+            patch("core.db.save_account", side_effect=lambda account: account),
+            patch("api.tasks._save_task_log"),
+        ):
+            _run_register(task_id, req)
+
+        snapshot = _task_store.snapshot(task_id)
+        joined_logs = "\n".join(snapshot["logs"])
+
+        self.assertEqual(snapshot["status"], "done")
+        self.assertEqual(snapshot["success"], 1)
+        self.assertEqual(snapshot["skipped"], 0)
+        self.assertEqual(len(snapshot["errors"]), 1)
+        self.assertFalse(snapshot["control"]["pause_requested"])
+        self.assertNotIn("[PAUSE]", joined_logs)
 
 
 if __name__ == "__main__":

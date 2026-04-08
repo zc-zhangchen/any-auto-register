@@ -10,7 +10,7 @@ from core.applemail_pool import (
     save_applemail_pool_json,
 )
 from core.config_store import config_store
-from core.db import OutlookAccountModel, engine
+from core.db import OutlookAccountLeaseModel, OutlookAccountModel, engine
 
 from .base import BaseMailImportStrategy
 from .microsoft_import_rules import (
@@ -285,7 +285,9 @@ class MicrosoftMailImportStrategy(BaseMailImportStrategy):
     def get_snapshot(self, request: MailImportSnapshotRequest) -> MailImportSnapshot:
         with Session(engine) as session:
             accounts = session.exec(
-                select(OutlookAccountModel).order_by(OutlookAccountModel.id)
+                select(OutlookAccountModel)
+                .where(OutlookAccountModel.enabled == True)
+                .order_by(OutlookAccountModel.id)
             ).all()
 
         limit = max(int(request.preview_limit or 0), 0)
@@ -326,6 +328,14 @@ class MicrosoftMailImportStrategy(BaseMailImportStrategy):
                 str(email or "").strip()
                 for email in session.exec(select(OutlookAccountModel.email)).all()
             }
+            existing_emails.update(
+                {
+                    str(email or "").strip()
+                    for email in session.exec(
+                        select(OutlookAccountLeaseModel.email)
+                    ).all()
+                }
+            )
             engine_ctx = {"existing_emails": existing_emails}
             rule_engine = MicrosoftMailImportRuleEngine([
                 DuplicateMicrosoftMailboxRule(),

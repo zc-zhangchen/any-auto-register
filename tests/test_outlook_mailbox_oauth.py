@@ -1,7 +1,10 @@
 import unittest
 from unittest import mock
 
+from sqlmodel import Session, SQLModel, create_engine, select
+
 from core.base_mailbox import MailboxAccount, OutlookMailbox, create_mailbox
+from core.db import OutlookAccountLeaseModel, OutlookAccountModel
 
 
 class _FakeResponse:
@@ -236,6 +239,102 @@ class OutlookMailboxOAuthTests(unittest.TestCase):
             "https://outlook.office.com/.default offline_access",
             attempted_scopes,
         )
+
+    def test_get_email_moves_account_into_recovery_pool(self):
+        mailbox = OutlookMailbox()
+        test_engine = create_engine("sqlite://")
+        SQLModel.metadata.create_all(test_engine)
+
+        try:
+            with Session(test_engine) as session:
+                session.add(
+                    OutlookAccountModel(
+                        email="lease-demo@outlook.com",
+                        password="password",
+                        client_id="client-id",
+                        refresh_token="refresh-token",
+                    )
+                )
+                session.commit()
+
+            with mock.patch("core.db.engine", test_engine):
+                account = mailbox.get_email()
+
+            self.assertEqual(account.email, "lease-demo@outlook.com")
+            self.assertTrue(account.extra.get("outlook_lease_id"))
+
+            with Session(test_engine) as session:
+                available = session.exec(select(OutlookAccountModel)).all()
+                leased = session.exec(select(OutlookAccountLeaseModel)).all()
+
+            self.assertEqual(len(available), 0)
+            self.assertEqual(len(leased), 1)
+            self.assertEqual(leased[0].email, "lease-demo@outlook.com")
+            self.assertEqual(leased[0].status, "leased")
+        finally:
+            test_engine.dispose()
+
+    def test_mark_account_failure_keeps_account_in_recovery_pool(self):
+        mailbox = OutlookMailbox()
+        test_engine = create_engine("sqlite://")
+        SQLModel.metadata.create_all(test_engine)
+
+        try:
+            with Session(test_engine) as session:
+                session.add(
+                    OutlookAccountModel(
+                        email="failed-demo@outlook.com",
+                        password="password",
+                        client_id="client-id",
+                        refresh_token="refresh-token",
+                    )
+                )
+                session.commit()
+
+            with mock.patch("core.db.engine", test_engine):
+                account = mailbox.get_email()
+                mailbox.mark_account_failure(account, error="token_exchange failed")
+
+            with Session(test_engine) as session:
+                available = session.exec(select(OutlookAccountModel)).all()
+                leased = session.exec(select(OutlookAccountLeaseModel)).all()
+
+            self.assertEqual(len(available), 0)
+            self.assertEqual(len(leased), 1)
+            self.assertEqual(leased[0].status, "recoverable")
+            self.assertEqual(leased[0].last_error, "token_exchange failed")
+        finally:
+            test_engine.dispose()
+
+    def test_mark_account_success_clears_recovery_record(self):
+        mailbox = OutlookMailbox()
+        test_engine = create_engine("sqlite://")
+        SQLModel.metadata.create_all(test_engine)
+
+        try:
+            with Session(test_engine) as session:
+                session.add(
+                    OutlookAccountModel(
+                        email="success-demo@outlook.com",
+                        password="password",
+                        client_id="client-id",
+                        refresh_token="refresh-token",
+                    )
+                )
+                session.commit()
+
+            with mock.patch("core.db.engine", test_engine):
+                account = mailbox.get_email()
+                mailbox.mark_account_success(account)
+
+            with Session(test_engine) as session:
+                available = session.exec(select(OutlookAccountModel)).all()
+                leased = session.exec(select(OutlookAccountLeaseModel)).all()
+
+            self.assertEqual(len(available), 0)
+            self.assertEqual(len(leased), 0)
+        finally:
+            test_engine.dispose()
 
 
 if __name__ == "__main__":

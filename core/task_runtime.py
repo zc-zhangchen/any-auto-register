@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+import re
 import threading
 import time
 from typing import Any
@@ -27,11 +28,19 @@ class SkipCurrentAttemptRequested(TaskInterruption):
         super().__init__(message)
 
 
+class PauseTaskRequested(TaskInterruption):
+    """任务因为风险条件被自动暂停。"""
+
+    def __init__(self, message: str = "任务已暂停"):
+        super().__init__(message)
+
+
 class AttemptOutcome(str, Enum):
     SUCCESS = "success"
     FAILED = "failed"
     SKIPPED = "skipped"
     STOPPED = "stopped"
+    PAUSED = "paused"
 
 
 @dataclass(slots=True)
@@ -55,6 +64,43 @@ class AttemptResult:
     def stopped(cls, message: str) -> "AttemptResult":
         return cls(AttemptOutcome.STOPPED, message)
 
+    @classmethod
+    def paused(cls, message: str) -> "AttemptResult":
+        return cls(AttemptOutcome.PAUSED, message)
+
+
+def should_auto_pause_on_http_400(message: str) -> bool:
+    text = " ".join(str(message or "").lower().split())
+    if not text or "400" not in text:
+        return False
+
+    markers = (
+        "http 400",
+        "status code 400",
+        "status_code=400",
+        "status=400",
+        "注册失败: 400",
+        "登录失败: 400",
+        "请求失败: 400",
+        "失败: 400 -",
+    )
+    if any(marker in text for marker in markers):
+        return True
+
+    if re.search(r"\bhttp\b[^0-9]{0,12}\b400\b", text):
+        return True
+    if re.search(r"(?:^|[^0-9])400\s*-", text):
+        return True
+    return False
+
+
+def build_http_400_pause_reason(message: str) -> str:
+    detail = str(message or "").strip()
+    base = "检测到 HTTP 400，可能触发风控，已自动暂停注册任务"
+    if not detail:
+        return base
+    return f"{base}: {detail}"
+
 
 class RegisterTaskControl:
     """协作式任务控制器：支持停止整个任务、跳过一个当前账号。"""
@@ -62,6 +108,8 @@ class RegisterTaskControl:
     def __init__(self):
         self._lock = threading.Lock()
         self._stop_requested = False
+        self._pause_requested = False
+        self._pause_reason = ""
         self._pending_skip_requests = 0
         self._next_attempt_id = 1
         self._active_attempt_ids: set[int] = set()
@@ -70,6 +118,14 @@ class RegisterTaskControl:
     def request_stop(self) -> None:
         with self._lock:
             self._stop_requested = True
+
+    def request_pause(self, reason: str = "") -> bool:
+        with self._lock:
+            if self._pause_requested:
+                return False
+            self._pause_requested = True
+            self._pause_reason = str(reason or "").strip()
+            return True
 
     def request_skip_current(self) -> None:
         with self._lock:
@@ -101,6 +157,8 @@ class RegisterTaskControl:
         with self._lock:
             if self._stop_requested:
                 raise StopTaskRequested()
+            if self._pause_requested:
+                raise PauseTaskRequested(self._pause_reason or "任务已暂停")
             if consume_skip:
                 if (
                     attempt_id is not None
@@ -116,10 +174,20 @@ class RegisterTaskControl:
         with self._lock:
             return self._stop_requested
 
+    def is_pause_requested(self) -> bool:
+        with self._lock:
+            return self._pause_requested
+
+    def pause_reason(self) -> str:
+        with self._lock:
+            return self._pause_reason
+
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
             return {
                 "stop_requested": self._stop_requested,
+                "pause_requested": self._pause_requested,
+                "pause_reason": self._pause_reason,
                 "pending_skip_requests": self._pending_skip_requests,
                 "active_attempts": len(self._active_attempt_ids),
                 "targeted_skip_attempts": len(self._skip_active_attempt_ids),
@@ -242,6 +310,11 @@ class RegisterTaskStore:
         control.request_skip_current()
         return control.snapshot()
 
+    def request_pause(self, task_id: str, reason: str = "") -> dict[str, Any]:
+        control = self.control_for(task_id)
+        control.request_pause(reason)
+        return control.snapshot()
+
     def append_log(self, task_id: str, entry: str) -> None:
         with self._lock:
             record = self._records.get(task_id)
@@ -327,7 +400,7 @@ class RegisterTaskStore:
             finished = [
                 (task_id, record)
                 for task_id, record in self._records.items()
-                if record.status in ("done", "failed", "stopped")
+                if record.status in ("done", "failed", "stopped", "paused")
             ]
             if len(finished) <= self.max_finished_tasks:
                 return
@@ -340,10 +413,13 @@ class RegisterTaskStore:
 __all__ = [
     "AttemptOutcome",
     "AttemptResult",
+    "build_http_400_pause_reason",
+    "PauseTaskRequested",
     "RegisterTaskControl",
     "RegisterTaskRecord",
     "RegisterTaskStore",
     "SkipCurrentAttemptRequested",
     "StopTaskRequested",
     "TaskInterruption",
+    "should_auto_pause_on_http_400",
 ]

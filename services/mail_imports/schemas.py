@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 
 MailImportProviderType = Literal["applemail", "microsoft"]
+MailRecoveryPoolMailboxFilter = Literal["all", "outlook", "hotmail"]
+MailRecoveryPoolMailboxType = Literal["outlook", "hotmail", "other"]
+MailRecoveryPoolStatusFilter = Literal["all", "leased", "recoverable"]
 
 DEFAULT_PREVIEW_LIMIT = 100
 MAX_PREVIEW_LIMIT = 500
@@ -110,3 +114,51 @@ class MailImportResponse(BaseModel):
     snapshot: MailImportSnapshot
     errors: list[str] = Field(default_factory=list)
     meta: dict[str, Any] = Field(default_factory=dict)
+
+
+class MailRecoveryPoolRequest(BaseModel):
+    mailbox_type: MailRecoveryPoolMailboxFilter = "all"
+    status: MailRecoveryPoolStatusFilter = "all"
+    search: str = ""
+    limit: int = Field(
+        default=DEFAULT_PREVIEW_LIMIT,
+        ge=1,
+        le=MAX_PREVIEW_LIMIT,
+    )
+
+
+class MailRecoveryPoolItem(BaseModel):
+    id: int
+    email: str
+    mailbox_type: MailRecoveryPoolMailboxType
+    status: str
+    has_oauth: bool = False
+    source_account_id: int | None = None
+    task_attempt_id: str = ""
+    last_error: str = ""
+    leased_at: datetime | None = None
+    last_failed_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class MailRecoveryPoolSummary(BaseModel):
+    total: int = 0
+    leased: int = 0
+    recoverable: int = 0
+    hotmail: int = 0
+    outlook: int = 0
+    other: int = 0
+
+
+class MailRecoveryPoolResponse(BaseModel):
+    mailbox_type: MailRecoveryPoolMailboxFilter
+    status: MailRecoveryPoolStatusFilter
+    search: str = ""
+    count: int
+    items: list[MailRecoveryPoolItem] = Field(default_factory=list)
+    truncated: bool = False
+    summary: MailRecoveryPoolSummary = Field(default_factory=MailRecoveryPoolSummary)
+
+
+class MailRecoveryPoolRestoreRequest(BaseModel):
+    id: int = Field(ge=1)

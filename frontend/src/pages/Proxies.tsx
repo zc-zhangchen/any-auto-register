@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Card, Table, Button, Input, Tag, Space, Popconfirm, message } from 'antd'
+import { Alert, Card, Table, Button, Input, Tag, Space, Popconfirm, Switch, message } from 'antd'
 import {
   PlusOutlined,
   DeleteOutlined,
@@ -9,6 +9,7 @@ import {
   SwapRightOutlined,
   SwapLeftOutlined,
 } from '@ant-design/icons'
+import { parseBooleanConfigValue } from '@/lib/configValueParsers'
 import { apiFetch } from '@/lib/utils'
 
 export default function Proxies() {
@@ -17,6 +18,8 @@ export default function Proxies() {
   const [region, setRegion] = useState('')
   const [checking, setChecking] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [autoDisableEnabled, setAutoDisableEnabled] = useState(true)
+  const [savingAutoDisable, setSavingAutoDisable] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -28,8 +31,14 @@ export default function Proxies() {
     }
   }
 
+  const loadConfig = async () => {
+    const data = await apiFetch('/config')
+    setAutoDisableEnabled(parseBooleanConfigValue(data.proxy_auto_disable_enabled || '1'))
+  }
+
   useEffect(() => {
     load()
+    loadConfig().catch(() => {})
   }, [])
 
   const add = async () => {
@@ -74,6 +83,24 @@ export default function Proxies() {
       load()
       setChecking(false)
     }, 3000)
+  }
+
+  const updateAutoDisable = async (checked: boolean) => {
+    setSavingAutoDisable(true)
+    try {
+      await apiFetch('/config', {
+        method: 'PUT',
+        body: JSON.stringify({
+          data: {
+            proxy_auto_disable_enabled: checked ? '1' : '0',
+          },
+        }),
+      })
+      setAutoDisableEnabled(checked)
+      message.success(checked ? '已开启代理自动禁用' : '已关闭代理自动禁用')
+    } finally {
+      setSavingAutoDisable(false)
+    }
   }
 
   const columns: any[] = [
@@ -161,6 +188,36 @@ export default function Proxies() {
               添加
             </Button>
           </Space>
+        </Space>
+      </Card>
+
+      <Card title="自动禁用策略">
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
+            <div>
+              <div style={{ fontWeight: 500, marginBottom: 4 }}>代理累计失败且从未成功时自动禁用</div>
+              <div style={{ color: '#7a8ba3', fontSize: 12 }}>
+                关闭后仍会继续累计成功/失败次数，但不会自动把代理标记为禁用。
+              </div>
+            </div>
+            <Switch
+              checked={autoDisableEnabled}
+              loading={savingAutoDisable}
+              checkedChildren="开启"
+              unCheckedChildren="关闭"
+              onChange={updateAutoDisable}
+            />
+          </div>
+          <Alert
+            showIcon
+            type={autoDisableEnabled ? 'warning' : 'info'}
+            message={autoDisableEnabled ? '当前已开启代理自动禁用' : '当前已关闭代理自动禁用'}
+            description={
+              autoDisableEnabled
+                ? '命中当前自动禁用条件后，代理会被自动标记为禁用，不再参与轮询。'
+                : '命中当前自动禁用条件后，代理仍保持活跃，需要你手动决定是否禁用。'
+            }
+          />
         </Space>
       </Card>
 

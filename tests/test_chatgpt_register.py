@@ -14,6 +14,9 @@ sys.modules.setdefault("smstome_tool", smstome_tool_stub)
 
 from platforms.chatgpt.oauth_client import OAuthClient
 from platforms.chatgpt.chatgpt_client import ChatGPTClient
+from platforms.chatgpt.access_token_only_registration_engine import (
+    AccessTokenOnlyRegistrationEngine,
+)
 from platforms.chatgpt.refresh_token_registration_engine import (
     RefreshTokenRegistrationEngine,
 )
@@ -220,6 +223,47 @@ class RefreshTokenRegistrationEngineTests(unittest.TestCase):
         call_args = oauth_client.signup_and_get_tokens.call_args_list
         self.assertEqual(call_args[0].args[0], "user1@example.com")
         self.assertEqual(call_args[1].args[0], "user2@example.com")
+
+
+class AccessTokenOnlyRegistrationEngineTests(unittest.TestCase):
+    def test_run_does_not_retry_after_http_400_registration_failure(self):
+        class RotatingEmailService:
+            service_type = type("ST", (), {"value": "dummy"})()
+
+            def __init__(self):
+                self.created = []
+
+            def create_email(self):
+                email = f"user{len(self.created) + 1}@example.com"
+                self.created.append(email)
+                return {"email": email, "service_id": email}
+
+            def get_verification_code(self, **kwargs):
+                return "123456"
+
+        email_service = RotatingEmailService()
+        client = mock.Mock()
+        client.register_complete_flow.return_value = (
+            False,
+            "注册失败: 400 - rate limited",
+        )
+
+        with mock.patch(
+            "platforms.chatgpt.access_token_only_registration_engine.ChatGPTClient",
+            return_value=client,
+        ):
+            engine = AccessTokenOnlyRegistrationEngine(
+                email_service=email_service,
+                proxy_url="http://127.0.0.1:7890",
+                callback_logger=lambda msg: None,
+                max_retries=3,
+            )
+            result = engine.run()
+
+        self.assertFalse(result.success)
+        self.assertIn("400", result.error_message)
+        self.assertEqual(email_service.created, ["user1@example.com"])
+        client.register_complete_flow.assert_called_once()
 
 
 class OAuthClientPasswordlessTests(unittest.TestCase):

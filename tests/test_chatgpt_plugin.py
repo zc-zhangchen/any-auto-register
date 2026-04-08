@@ -41,6 +41,19 @@ class _RequeueMailbox(_TrackingMailbox):
         self.requeued.append(account)
 
 
+class _RecoveringMailbox(_TrackingMailbox):
+    def __init__(self):
+        super().__init__()
+        self.successes = []
+        self.failures = []
+
+    def mark_account_success(self, account):
+        self.successes.append(account)
+
+    def mark_account_failure(self, account, error=None):
+        self.failures.append((account, error))
+
+
 class _FakeAdapter:
     def run(self, context):
         context.email_service.create_email()
@@ -149,6 +162,40 @@ class ChatGPTPluginTests(unittest.TestCase):
                 platform.register()
 
         self.assertEqual(mailbox.requeued, [mailbox.account])
+
+    def test_custom_provider_marks_mailbox_success_on_success(self):
+        mailbox = _RecoveringMailbox()
+        platform = ChatGPTPlatform(
+            config=RegisterConfig(extra={"chatgpt_registration_mode": "refresh_token"}),
+            mailbox=mailbox,
+        )
+        adapter = _VerificationAdapter()
+
+        with mock.patch(
+            "platforms.chatgpt.plugin.build_chatgpt_registration_mode_adapter",
+            return_value=adapter,
+        ):
+            platform.register()
+
+        self.assertEqual(mailbox.successes, [mailbox.account])
+        self.assertEqual(mailbox.failures, [])
+
+    def test_custom_provider_marks_mailbox_failure_on_failure(self):
+        mailbox = _RecoveringMailbox()
+        platform = ChatGPTPlatform(
+            config=RegisterConfig(extra={"chatgpt_registration_mode": "refresh_token"}),
+            mailbox=mailbox,
+        )
+
+        with mock.patch(
+            "platforms.chatgpt.plugin.build_chatgpt_registration_mode_adapter",
+            return_value=_FailingAdapter(),
+        ):
+            with self.assertRaises(RuntimeError):
+                platform.register()
+
+        self.assertEqual(mailbox.successes, [])
+        self.assertEqual(mailbox.failures, [(mailbox.account, "boom")])
 
 
 if __name__ == "__main__":

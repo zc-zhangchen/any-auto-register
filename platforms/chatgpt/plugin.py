@@ -181,6 +181,35 @@ class ChatGPTPlatform(BasePlatform):
 
             email_service = TempMailEmailService()
 
+        mailbox_finalized = False
+
+        def _finalize_mailbox(success: bool, error=None) -> None:
+            nonlocal mailbox_finalized
+            if mailbox_finalized or not self.mailbox:
+                return
+
+            mailbox_account = getattr(email_service, "_acct", None)
+            if mailbox_account is None:
+                return
+
+            try:
+                if success:
+                    mark_success = getattr(self.mailbox, "mark_account_success", None)
+                    if callable(mark_success):
+                        mark_success(mailbox_account)
+                else:
+                    failure_message = str(error or "").strip()
+                    mark_failure = getattr(self.mailbox, "mark_account_failure", None)
+                    if callable(mark_failure):
+                        mark_failure(mailbox_account, error=failure_message)
+                    else:
+                        requeue = getattr(self.mailbox, "requeue_account", None)
+                        if callable(requeue):
+                            requeue(mailbox_account)
+                mailbox_finalized = True
+            except Exception as exc:
+                log_fn(f"[Mailbox] 状态回写失败: {exc}")
+
         adapter = build_chatgpt_registration_mode_adapter(extra_config)
         context = ChatGPTRegistrationContext(
             email_service=email_service,
@@ -192,11 +221,19 @@ class ChatGPTPlatform(BasePlatform):
             max_retries=max_retries,
             extra_config=extra_config,
         )
-        result = adapter.run(context)
+        try:
+            result = adapter.run(context)
+        except Exception as exc:
+            _finalize_mailbox(False, exc)
+            raise
+
         if not result or not result.success:
+            _finalize_mailbox(False, result.error_message if result else "")
             raise RuntimeError(result.error_message if result else "注册失败")
 
-        return adapter.build_account(result, password)
+        account = adapter.build_account(result, password)
+        _finalize_mailbox(True)
+        return account
 
     def get_platform_actions(self) -> list:
         return [

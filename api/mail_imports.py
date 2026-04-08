@@ -7,6 +7,14 @@ from services.mail_imports import (
     MailImportSnapshotRequest,
     mail_import_registry,
 )
+from services.mail_imports.recovery_pool import (
+    get_microsoft_recovery_pool,
+    restore_microsoft_recovery_item,
+)
+from services.mail_imports.schemas import (
+    MailRecoveryPoolRequest,
+    MailRecoveryPoolRestoreRequest,
+)
 
 router = APIRouter(prefix="/mail-imports", tags=["mail-imports"])
 
@@ -32,6 +40,38 @@ def get_mail_import_snapshot(
             preview_limit=preview_limit,
         )
         return strategy.get_snapshot(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/recovery-pool")
+def get_recovery_pool_snapshot(
+    mailbox_type: str = Query(default="all"),
+    status: str = Query(default="all"),
+    search: str = "",
+    limit: int = 100,
+):
+    try:
+        request = MailRecoveryPoolRequest(
+            mailbox_type=mailbox_type,
+            status=status,
+            search=search,
+            limit=limit,
+        )
+        return get_microsoft_recovery_pool(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/recovery-pool/restore")
+def restore_recovery_pool_item(body: MailRecoveryPoolRestoreRequest):
+    try:
+        item = restore_microsoft_recovery_item(body.id)
+        return {"ok": True, "item": item}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:

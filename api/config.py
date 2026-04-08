@@ -6,6 +6,7 @@ from services.mail_imports import MailImportExecuteRequest, MailImportSnapshotRe
 router = APIRouter(prefix="/config", tags=["config"])
 
 CONFIG_KEYS = [
+    "proxy_auto_disable_enabled",
     "email_domain_rule_enabled",
     "email_domain_level_count",
     "laoudo_auth",
@@ -119,6 +120,8 @@ class AppleMailImportRequest(BaseModel):
 @router.get("")
 def get_config():
     all_cfg = config_store.get_all()
+    if not str(all_cfg.get("proxy_auto_disable_enabled", "") or "").strip():
+        all_cfg["proxy_auto_disable_enabled"] = "1"
     if all_cfg.get("mail_provider") == "outlook":
         all_cfg["mail_provider"] = "microsoft"
     if not all_cfg.get("mail_provider"):
@@ -158,6 +161,11 @@ def update_config(body: ConfigUpdate):
     if "email_domain_rule_enabled" in safe:
         enabled = str(safe.get("email_domain_rule_enabled", "")).strip().lower()
         safe["email_domain_rule_enabled"] = (
+            "1" if enabled in {"1", "true", "yes", "on"} else "0"
+        )
+    if "proxy_auto_disable_enabled" in safe:
+        enabled = str(safe.get("proxy_auto_disable_enabled", "")).strip().lower()
+        safe["proxy_auto_disable_enabled"] = (
             "1" if enabled in {"1", "true", "yes", "on"} else "0"
         )
     if "email_domain_level_count" in safe:

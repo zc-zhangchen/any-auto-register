@@ -8,7 +8,7 @@ import logging
 from datetime import datetime
 from typing import Optional, Callable
 
-from core.task_runtime import TaskInterruption
+from core.task_runtime import TaskInterruption, should_auto_pause_on_http_400
 from platforms.chatgpt.refresh_token_registration_engine import RegistrationResult
 
 from .chatgpt_client import ChatGPTClient
@@ -72,6 +72,9 @@ class AccessTokenOnlyRegistrationEngine:
             logger.info(log_message)
 
     def _should_retry(self, message: str) -> bool:
+        if should_auto_pause_on_http_400(message):
+            return False
+
         text = str(message or "").lower()
         retriable_markers = [
             "tls",
@@ -80,7 +83,6 @@ class AccessTokenOnlyRegistrationEngine:
             "预授权被拦截",
             "authorize",
             "registration_disallowed",
-            "http 400",
             "创建账号失败",
             "未获取到 authorization code",
             "consent",
