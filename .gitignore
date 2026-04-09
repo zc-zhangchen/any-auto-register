@@ -83,3 +83,4 @@ kiro_error.*
 # 本地数据文件
 account_manager.db
 .codex/config.toml
+.worktrees/

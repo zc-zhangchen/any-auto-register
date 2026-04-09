@@ -344,6 +344,9 @@ def create_mailbox(
             domain=extra.get("luckmail_domain", ""),
             proxy=proxy,
         )
+    elif provider == "tmailor":
+        from .tmailor_mailbox import TmailorMailbox
+        return TmailorMailbox(proxy=proxy)
     elif provider == "ddg":
         from .ddg_mailbox import DuckDuckGoMailbox
 

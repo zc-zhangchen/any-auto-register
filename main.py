@@ -20,6 +20,7 @@ from api.auth import router as auth_router
 from api.mail_imports import router as mail_imports_router
 from api.outlook import router as outlook_router
 from api.contribution import router as contribution_router
+from api.tmailor import router as tmailor_router
 
 EXPECTED_CONDA_ENV = os.getenv("APP_CONDA_ENV", "any-auto-register")
 
@@ -116,6 +117,7 @@ app.include_router(auth_router, prefix="/api")
 app.include_router(mail_imports_router, prefix="/api")
 app.include_router(outlook_router, prefix="/api")
 app.include_router(contribution_router, prefix="/api")
+app.include_router(tmailor_router, prefix="/api")
 
 
 @app.get("/api/solver/status")

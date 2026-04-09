@@ -375,6 +375,11 @@ class DuckDuckGoMailbox(BaseMailbox):
         if not inbox_url:
             raise RuntimeError("DDG 邮箱账户缺少 mail_inbox_url，无法获取验证码")
 
+        # 统一 Key 格式，与后台缓存保持一致
+        inbox_key = inbox_url.rstrip("/")
+
+        # 注意：seen 集合必须独立，不能跨线程/跨实例共享
+        # get_current_ids() 已经废弃，改用 otp_sent_at 时间戳过滤
         seen = {str(mid) for mid in (before_ids or set())}
         exclude_codes = {str(c).strip() for c in (kwargs.get("exclude_codes") or set()) if str(c or "").strip()}
 
@@ -408,9 +413,21 @@ class DuckDuckGoMailbox(BaseMailbox):
                     continue
 
                 if target_email:
-                    prefix = target_email.split("@")[0] if "@" in target_email else target_email
-                    if prefix not in str(mail.get("raw") or "").lower():
-                        continue
+                    target_prefix = target_email.split("@")[0] if "@" in target_email else target_email
+                    raw_lower = str(mail.get("raw") or "").lower()
+                    source = str(mail.get("source") or "")
+
+                    # 优先从 source 字段精确匹配 (=alias@duck.com)
+                    source_match = re.search(r"=([a-z0-9]+-[a-z0-9]+-[a-z0-9]+)@duck\.com", source, re.IGNORECASE)
+                    if source_match:
+                        source_alias = source_match.group(1).lower()
+                        if source_alias != target_prefix:
+                            continue
+                    else:
+                        # Fallback: 用完整地址的单词边界匹配 raw
+                        addr_pattern = rf"\b{re.escape(target_prefix)}@duck\.com\b"
+                        if not re.search(addr_pattern, raw_lower):
+                            continue
 
                 code = self._extract_code_from_mail(mail, code_pattern)
                 if code and code in exclude_codes:

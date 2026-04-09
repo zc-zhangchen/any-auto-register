@@ -40,6 +40,7 @@ const SELECT_FIELDS: Record<string, { label: string; value: string }[]> = {
     { label: 'Freemail（自建 CF Worker）', value: 'freemail' },
     { label: 'CF Worker（自建域名）', value: 'cfworker' },
     { label: 'DuckDuckGo（DDG 别名 + CF 收件）', value: 'ddg' },
+    { label: 'Tmailor（tmailor.com）', value: 'tmailor' },
   ],
   maliapi_auto_domain_strategy: [
     { label: 'balanced', value: 'balanced' },
@@ -817,159 +818,6 @@ function CFWorkerDomainPoolSection({ form }: { form: FormInstance<SettingsFormVa
   )
 }
 
-function AppleMailPoolImportSection({ form }: { form: any }) {
-  const [content, setContent] = useState('')
-  const [filename, setFilename] = useState('')
-  const [importing, setImporting] = useState(false)
-  const [snapshot, setSnapshot] = useState<AppleMailPoolSnapshot | null>(null)
-  const [loadingSnapshot, setLoadingSnapshot] = useState(false)
-  const watchedPoolDir = Form.useWatch('applemail_pool_dir', form) || 'mail'
-  const watchedPoolFile = Form.useWatch('applemail_pool_file', form) || ''
-
-  const loadSnapshot = async () => {
-    setLoadingSnapshot(true)
-    try {
-      const params = new URLSearchParams()
-      if (String(watchedPoolDir || '').trim()) {
-        params.set('pool_dir', String(watchedPoolDir || '').trim())
-      }
-      if (String(watchedPoolFile || '').trim()) {
-        params.set('pool_file', String(watchedPoolFile || '').trim())
-      }
-      const result = await apiFetch(`/config/applemail/pool?${params.toString()}`)
-      setSnapshot(result)
-    } catch {
-      setSnapshot(null)
-    } finally {
-      setLoadingSnapshot(false)
-    }
-  }
-
-  useEffect(() => {
-    void loadSnapshot()
-  }, [watchedPoolDir, watchedPoolFile])
-
-  const handleImport = async () => {
-    if (!content.trim()) {
-      message.error('请输入 JSON 或 TXT 内容')
-      return
-    }
-
-    setImporting(true)
-    try {
-      const poolDir = String(form.getFieldValue('applemail_pool_dir') || 'mail').trim() || 'mail'
-      const result = await apiFetch('/config/applemail/import', {
-        method: 'POST',
-        body: JSON.stringify({
-          content,
-          filename,
-          pool_dir: poolDir,
-          bind_to_config: true,
-        }),
-      })
-
-      form.setFieldsValue({
-        mail_provider: 'applemail',
-        applemail_pool_dir: result.pool_dir,
-        applemail_pool_file: result.filename,
-      })
-      setSnapshot({
-        filename: result.filename,
-        pool_dir: result.pool_dir,
-        count: result.count,
-        items: result.items || [],
-        truncated: Boolean(result.truncated),
-      })
-      setContent('')
-      setFilename('')
-      message.success(`导入成功，共 ${result.count} 个邮箱，已绑定 ${result.filename}`)
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'AppleMail 内容导入失败'
-      message.error(errorMessage || 'AppleMail 内容导入失败')
-    } finally {
-      setImporting(false)
-    }
-  }
-
-  return (
-    <Card
-      title="AppleMail 内容导入"
-      extra={<span style={{ fontSize: 12, color: '#7a8ba3' }}>支持 JSON 或 TXT；导入后自动绑定当前邮箱池文件</span>}
-      style={{ marginBottom: 16 }}
-    >
-      <Space direction="vertical" style={{ width: '100%' }} size={12}>
-        <Typography.Text type="secondary">
-          支持数组/对象 JSON，也支持 `mail/*.txt` 那种每行一条的 `email----password----client_id----refresh_token` 格式。常见字段别名如 `clientId` / `refreshToken` / `folder` 会自动规范化。
-        </Typography.Text>
-        <Input
-          value={filename}
-          onChange={(event) => setFilename(event.target.value)}
-          placeholder="可选文件名，例如 applemail_hotmail.json；留空自动生成"
-        />
-        <Input.TextArea
-          value={content}
-          onChange={(event) => setContent(event.target.value)}
-          rows={10}
-          placeholder={'[\n  {\n    "email": "demo@example.com",\n    "clientId": "xxxx",\n    "refreshToken": "xxxx",\n    "folder": "INBOX"\n  }\n]\n\n或粘贴 TXT:\ndemo@example.com----password----client_id----refresh_token'}
-          style={{ fontFamily: 'monospace' }}
-        />
-        <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-          <Button
-            danger
-            onClick={() => {
-              setContent('')
-              setFilename('')
-            }}
-          >
-            清空
-          </Button>
-          <Space>
-            <Button onClick={() => void loadSnapshot()} loading={loadingSnapshot}>
-              刷新预览
-            </Button>
-            <Button type="primary" onClick={handleImport} loading={importing}>
-              确认导入
-            </Button>
-          </Space>
-        </Space>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <Tag color="blue">已导入: {snapshot?.count || 0} 个邮箱</Tag>
-          {snapshot?.filename ? <Typography.Text type="secondary">当前文件: {snapshot.filename}</Typography.Text> : null}
-        </div>
-
-        <div
-          style={{
-            border: '1px solid rgba(127,127,127,0.25)',
-            borderRadius: 8,
-            padding: 12,
-            background: 'rgba(127,127,127,0.06)',
-            minHeight: 88,
-            maxHeight: 260,
-            overflowY: 'auto',
-            fontFamily: 'monospace',
-            fontSize: 13,
-            lineHeight: 1.7,
-          }}
-        >
-          {snapshot?.items?.length ? (
-            snapshot.items.map((item) => (
-              <div key={`${item.index}-${item.email}`}>
-                {item.index}. {item.email}
-              </div>
-            ))
-          ) : (
-            <Typography.Text type="secondary">当前还没有可预览的邮箱池内容。</Typography.Text>
-          )}
-        </div>
-        {snapshot?.truncated ? (
-          <Typography.Text type="secondary">预览只展示前 100 个邮箱，完整内容以文件为准。</Typography.Text>
-        ) : null}
-      </Space>
-    </Card>
-  )
-}
-
 function DDGKeysConfigSection({ form, onSave, saving, saved }: { form: any; onSave: () => void; saving: boolean; saved: boolean }) {
   const mailProvider = form.getFieldValue('mail_provider')
   if (mailProvider !== 'ddg') return null
@@ -1024,7 +872,6 @@ function DDGKeysConfigSection({ form, onSave, saving, saved }: { form: any; onSa
   )
 }
 
->>>>>>> d746ec6 (feat: DDG邮件缓存优化、CPA自动清理禁用、OTP重发间隔调整、双重时间戳修复)
 function SolverStatus() {
   const [running, setRunning] = useState<boolean | null>(null)
 

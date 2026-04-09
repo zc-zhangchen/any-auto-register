@@ -3133,9 +3133,9 @@ class OAuthClient:
                 if refresh_resp.status_code == 200:
                     self._log("OTP 验证 session 已刷新")
                 else:
-                    self._log(f"OTP 验证 session 刷新警告: HTTP {refresh_resp.status_code}", "warning")
+                    self._log(f"OTP 验证 session 刷新警告: HTTP {refresh_resp.status_code}")
             except Exception as e:
-                self._log(f"OTP 验证 session 刷新异常: {e}", "warning")
+                self._log(f"OTP 验证 session 刷新异常: {e}")
 
             try:
                 kwargs = {

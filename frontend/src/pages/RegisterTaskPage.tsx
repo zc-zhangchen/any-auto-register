@@ -363,6 +363,7 @@ export default function RegisterTaskPage() {
                 { value: 'laoudo', label: 'Laoudo' },
                 { value: 'cfworker', label: 'CF Worker' },
                 { value: 'ddg', label: 'DuckDuckGo' },
+                { value: 'tmailor', label: 'Tmailor' },
               ]}
             />
           </Form.Item>

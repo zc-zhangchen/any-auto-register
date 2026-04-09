@@ -92,11 +92,9 @@ class ChatGPTPlatform(BasePlatform):
                     if self._email and self._acct and _fixed_email:
                         return {"email": self._email, "service_id": self._acct.account_id, "token": ""}
                     self._acct = _mailbox.get_email()
-                    get_current_ids = getattr(_mailbox, "get_current_ids", None)
-                    if callable(get_current_ids):
-                        self._before_ids = set(get_current_ids(self._acct) or [])
-                    else:
-                        self._before_ids = set()
+                    # 注意：DDG 多线程共享 inbox，不再用 get_current_ids() 填充 before_ids
+                    # 旧邮件通过 otp_sent_at 时间戳过滤即可，before_ids 可能包含其他注册的邮件 ID 导致误跳
+                    self._before_ids = set()
                     generated_email = getattr(self._acct, "email", "")
                     if not self._email:
                         self._email = _resolve_email(generated_email)
@@ -150,7 +148,8 @@ class ChatGPTPlatform(BasePlatform):
                 def create_email(self, config=None):
                     acct = _tmail.get_email()
                     self._acct = acct
-                    self._before_ids = set(_tmail.get_current_ids(acct) or [])
+                    # 注意：不再用 get_current_ids() 填充 before_ids，避免跨账号误跳
+                    self._before_ids = set()
                     resolved_email = str(getattr(acct, "email", "") or "").strip()
                     if not resolved_email:
                         raise RuntimeError("tempmail_lol 返回空邮箱地址")
