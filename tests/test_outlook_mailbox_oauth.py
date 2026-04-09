@@ -205,6 +205,66 @@ class OutlookMailboxOAuthTests(unittest.TestCase):
         self.assertTrue(any("/me/mailFolders/deleteditems/messages" in url for url in requested_urls))
 
     @mock.patch("requests.post")
+    @mock.patch("requests.request")
+    def test_wait_for_code_skips_graph_messages_older_than_otp_sent_at(self, mock_request, mock_post):
+        mailbox = OutlookMailbox(token_endpoint="https://token.example.test")
+        mailbox._graph_folder_names = ["inbox"]
+        account = MailboxAccount(
+            email="demo@outlook.com",
+            extra={
+                "client_id": "client-id",
+                "refresh_token": "refresh-token",
+            },
+        )
+        mock_post.return_value = _FakeResponse(
+            200,
+            payload={"access_token": "graph-token", "expires_in": 3600},
+            text='{"access_token":"graph-token","expires_in":3600}',
+        )
+        mock_request.side_effect = [
+            _FakeResponse(
+                200,
+                payload={
+                    "value": [
+                        {
+                            "id": "message-old",
+                            "subject": "OpenAI verification code",
+                            "bodyPreview": "Your verification code is 111111",
+                            "receivedDateTime": "1970-01-01T00:01:00+00:00",
+                        }
+                    ]
+                },
+            ),
+            _FakeResponse(
+                200,
+                payload={
+                    "value": [
+                        {
+                            "id": "message-new",
+                            "subject": "OpenAI verification code",
+                            "bodyPreview": "Your verification code is 222222",
+                            "receivedDateTime": "1970-01-01T00:05:00+00:00",
+                        }
+                    ]
+                },
+            ),
+        ]
+
+        def run_two_polls(*, poll_once, **kwargs):
+            first = poll_once()
+            if first:
+                return first
+            second = poll_once()
+            if second:
+                return second
+            raise TimeoutError("expected a fresh OTP")
+
+        with mock.patch.object(mailbox, "_run_polling_wait", side_effect=run_two_polls):
+            code = mailbox.wait_for_code(account, timeout=5, otp_sent_at=180)
+
+        self.assertEqual(code, "222222")
+
+    @mock.patch("requests.post")
     def test_fetch_oauth_token_returns_empty_when_probe_gets_malformed_json_on_2xx(self, mock_post):
         mailbox = OutlookMailbox(token_endpoint="https://token.example.test")
         mock_post.side_effect = [

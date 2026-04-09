@@ -9,6 +9,7 @@ import time
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Optional, Any, Callable
 from .proxy_utils import build_requests_proxy_config
 
@@ -3162,6 +3163,7 @@ class OutlookImapMailboxBackend(OutlookMailboxBackend):
             for code in (kwargs.get("exclude_codes") or set())
             if str(code or "").strip()
         }
+        otp_sent_at = self.mailbox._otp_cutoff_timestamp(kwargs.get("otp_sent_at"))
         keyword_lower = str(keyword or "").strip().lower()
 
         def poll_once() -> Optional[str]:
@@ -3221,9 +3223,17 @@ class OutlookImapMailboxBackend(OutlookMailboxBackend):
                         msg = message_from_bytes(raw, policy=email_default_policy)
                         subject = self.mailbox._decode_header_value(msg.get("Subject", ""))
                         text = self.mailbox._extract_message_text(msg)
+                        message_ts = self.mailbox._parse_message_timestamp(
+                            msg.get("Date", ""),
+                        )
                         self.mailbox._log(
                             f"[微软邮箱][IMAP] folder={folder} 命中新邮件 subject={subject or '-'}"
                         )
+                        if otp_sent_at and message_ts and message_ts < otp_sent_at:
+                            self.mailbox._log(
+                                f"[微软邮箱][IMAP] folder={folder} 跳过旧邮件 Date={msg.get('Date', '') or '-'}"
+                            )
+                            continue
                         if keyword_lower and keyword_lower not in text.lower():
                             self.mailbox._log(
                                 f"[微软邮箱][IMAP] folder={folder} 跳过关键字不匹配邮件"
@@ -3299,6 +3309,7 @@ class OutlookGraphMailboxBackend(OutlookMailboxBackend):
             for code in (kwargs.get("exclude_codes") or set())
             if str(code or "").strip()
         }
+        otp_sent_at = self.mailbox._otp_cutoff_timestamp(kwargs.get("otp_sent_at"))
         keyword_lower = str(keyword or "").strip().lower()
 
         def poll_once() -> Optional[str]:
@@ -3327,9 +3338,17 @@ class OutlookGraphMailboxBackend(OutlookMailboxBackend):
                     for message in new_messages:
                         subject = str(message.get("subject") or "").strip()
                         text = self.mailbox._graph_message_text(message)
+                        message_ts = self.mailbox._parse_message_timestamp(
+                            message.get("receivedDateTime"),
+                        )
                         self.mailbox._log(
                             f"[微软邮箱][Graph] folder={folder} 命中新邮件 subject={subject or '-'}"
                         )
+                        if otp_sent_at and message_ts and message_ts < otp_sent_at:
+                            self.mailbox._log(
+                                f"[微软邮箱][Graph] folder={folder} 跳过旧邮件 receivedDateTime={message.get('receivedDateTime') or '-'}"
+                            )
+                            continue
                         if keyword_lower and keyword_lower not in text.lower():
                             self.mailbox._log(
                                 f"[微软邮箱][Graph] folder={folder} 跳过关键字不匹配邮件"
@@ -3344,6 +3363,9 @@ class OutlookGraphMailboxBackend(OutlookMailboxBackend):
                                     message_id=message_id,
                                 )
                                 text = self.mailbox._graph_message_text(detail)
+                                message_ts = message_ts or self.mailbox._parse_message_timestamp(
+                                    detail.get("receivedDateTime"),
+                                )
                                 code = self.mailbox._safe_extract(text, code_pattern)
                         if not code:
                             self.mailbox._log(
@@ -4061,6 +4083,41 @@ class OutlookMailbox(BaseMailbox):
             part for part in [subject, preview, body_content, unique_body_content] if part
         )
         return self._decode_raw_content(combined)
+
+    @staticmethod
+    def _parse_message_timestamp(*values) -> Optional[float]:
+        from email.utils import parsedate_to_datetime
+
+        for value in values:
+            if value in (None, ""):
+                continue
+            if isinstance(value, (int, float)):
+                numeric = float(value)
+                return numeric / 1000 if numeric > 10_000_000_000 else numeric
+            text = str(value).strip()
+            if not text:
+                continue
+            try:
+                numeric = float(text)
+                return numeric / 1000 if numeric > 10_000_000_000 else numeric
+            except (TypeError, ValueError):
+                pass
+            try:
+                return datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
+            except ValueError:
+                pass
+            try:
+                return parsedate_to_datetime(text).timestamp()
+            except (TypeError, ValueError, IndexError, OverflowError):
+                continue
+        return None
+
+    @staticmethod
+    def _otp_cutoff_timestamp(otp_sent_at: Any) -> Optional[float]:
+        parsed = OutlookMailbox._parse_message_timestamp(otp_sent_at)
+        if not parsed:
+            return None
+        return parsed - 2.0
 
     def _decode_header_value(self, value: str) -> str:
         from email.header import decode_header
