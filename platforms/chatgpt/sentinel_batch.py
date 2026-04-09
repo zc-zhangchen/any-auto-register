@@ -22,9 +22,7 @@ from core.proxy_utils import build_playwright_proxy_config, normalize_proxy_url
 
 
 DEFAULT_SDK_VERSION = "20260219f9f6"
-DEFAULT_FRAME_URL = (
-    f"https://sentinel.openai.com/backend-api/sentinel/frame.html?sv={DEFAULT_SDK_VERSION}"
-)
+DEFAULT_FRAME_URL = f"https://sentinel.openai.com/backend-api/sentinel/frame.html?sv={DEFAULT_SDK_VERSION}"
 DEFAULT_SDK_URL = f"https://sentinel.openai.com/sentinel/{DEFAULT_SDK_VERSION}/sdk.js"
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -231,7 +229,9 @@ class ConfigResolver:
         environ: Optional[Mapping[str, str]] = None,
     ) -> None:
         self._config = config
-        self._proxy_selector = proxy_selector or ConfigBackedProxySelector(config=config)
+        self._proxy_selector = proxy_selector or ConfigBackedProxySelector(
+            config=config
+        )
         self._environ = environ if environ is not None else os.environ
 
     def _get(self, key: str, default: str = "") -> str:
@@ -246,9 +246,9 @@ class ConfigResolver:
         return Path(out_value).expanduser() if out_value else DEFAULT_OUT
 
     def _resolve_flows(self) -> tuple[FlowSpec, ...]:
-        flow_alias_map = {
-            spec.internal_name: spec for spec in DEFAULT_FLOW_SPECS
-        } | {spec.alias: spec for spec in DEFAULT_FLOW_SPECS}
+        flow_alias_map = {spec.internal_name: spec for spec in DEFAULT_FLOW_SPECS} | {
+            spec.alias: spec for spec in DEFAULT_FLOW_SPECS
+        }
         flows_raw = self._get("FLOWS", "")
         if not flows_raw:
             return DEFAULT_FLOW_SPECS
@@ -268,7 +268,9 @@ class ConfigResolver:
     def resolve(self) -> SentinelBatchConfig:
         requested_headless = None
         if "HEADLESS" in self._environ:
-            requested_headless = self._environ.get("HEADLESS", "").strip().lower() not in {
+            requested_headless = self._environ.get(
+                "HEADLESS", ""
+            ).strip().lower() not in {
                 "",
                 "0",
                 "false",
@@ -354,7 +356,9 @@ class PlaywrightSentinelProvider(SentinelProvider):
             ]
         )
         self._page = self._context.new_page()
-        self._page.goto(self._config.frame_url, wait_until="load", timeout=self._timeout_ms)
+        self._page.goto(
+            self._config.frame_url, wait_until="load", timeout=self._timeout_ms
+        )
         self._ensure_sdk_loaded()
         return self
 
@@ -485,7 +489,9 @@ class SentinelBatchService:
                 try:
                     item.sentinel_token = provider.get_flow_token(flow)
                     if flow.needs_session_observer_token:
-                        item.sentinel_so_token = provider.get_session_observer_token(flow)
+                        item.sentinel_so_token = provider.get_session_observer_token(
+                            flow
+                        )
                 except Exception as exc:  # pragma: no cover - exercised via tests
                     item.error = str(exc)
                 result.flows[flow.alias] = item

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """邮箱池基类 - 抽象临时邮箱/收件服务"""
 
 import json
@@ -4179,7 +4181,7 @@ class OutlookMailbox(BaseMailbox):
             candidates.append(key)
         return candidates
 
-    def _fetch_oauth_token_bundle(
+    def probe_oauth_availability(
         self,
         *,
         email: str,
@@ -4191,9 +4193,15 @@ class OutlookMailbox(BaseMailbox):
             self._log(
                 f"[微软邮箱] OAuth token 跳过: email={email} has_client_id={bool(client_id)} has_refresh_token={bool(refresh_token)}"
             )
-            return {}
+            return {
+                "ok": False,
+                "reason": "missing_oauth_credentials",
+                "message": "缺少 client_id 或 refresh_token，无法通过微软邮箱可用性检测",
+            }
+
         import requests
 
+        last_error = ""
         for endpoint in self._token_endpoints():
             endpoint = str(endpoint or "").strip()
             if not endpoint:
@@ -4221,11 +4229,31 @@ class OutlookMailbox(BaseMailbox):
                         "[微软邮箱] OAuth token 响应: "
                         f"email={email} endpoint={endpoint} scope_label={scope_label} status={resp.status_code}"
                     )
-                    if resp.status_code >= 400:
-                        self._log(
-                            f"[微软邮箱] OAuth token 失败响应: {resp.text[:200]}"
-                        )
-                        continue
+                except Exception as exc:
+                    last_error = str(exc)
+                    self._log(
+                        "[微软邮箱] OAuth token 请求异常: "
+                        f"email={email} endpoint={endpoint} scope_label={scope_label} error={exc}"
+                    )
+                    continue
+
+                body_text = str(resp.text or "")[:500]
+                if resp.status_code >= 400:
+                    self._log(f"[微软邮箱] OAuth token 失败响应: {body_text[:200]}")
+                    lowered = body_text.lower()
+                    if "invalid_grant" in lowered and "service abuse mode" in lowered:
+                        return {
+                            "ok": False,
+                            "reason": "service_abuse_mode",
+                            "message": "微软邮箱可用性检测未通过，账号处于 service abuse mode",
+                            "status_code": resp.status_code,
+                            "endpoint": endpoint,
+                            "scope_label": scope_label,
+                        }
+                    last_error = body_text or f"HTTP {resp.status_code}"
+                    continue
+
+                try:
                     data = resp.json() if resp.content else {}
                     access_token = str(data.get("access_token") or "").strip()
                     if access_token:
@@ -4238,20 +4266,54 @@ class OutlookMailbox(BaseMailbox):
                             f"[微软邮箱] OAuth access token 获取成功: {email} (scope_label={scope_label})"
                         )
                         return {
+                            "ok": True,
+                            "reason": "ok",
+                            "message": "微软邮箱可用性检测通过",
                             "access_token": access_token,
                             "scope_label": scope_label,
-                            "expires_in": expires_in_value,
                             "endpoint": endpoint,
+                            "expires_in": expires_in_value,
                         }
+
                     self._log(
                         f"[微软邮箱] OAuth token 响应未包含 access_token: keys={sorted(list(data.keys()))[:10]}"
                     )
+                    last_error = body_text or "OAuth 响应未包含 access_token"
                 except Exception as exc:
+                    last_error = body_text or str(exc) or "OAuth 响应解析失败"
                     self._log(
-                        "[微软邮箱] OAuth token 请求异常: "
+                        "[微软邮箱] OAuth token 响应解析异常: "
                         f"email={email} endpoint={endpoint} scope_label={scope_label} error={exc}"
                     )
                     continue
+
+        return {
+            "ok": False,
+            "reason": "oauth_token_failed",
+            "message": f"微软邮箱可用性检测未通过: {last_error or 'OAuth token 获取失败'}",
+        }
+
+    def _fetch_oauth_token_bundle(
+        self,
+        *,
+        email: str,
+        client_id: str,
+        refresh_token: str,
+        preferred_backend: str | None = None,
+    ) -> dict[str, Any]:
+        probe = self.probe_oauth_availability(
+            email=email,
+            client_id=client_id,
+            refresh_token=refresh_token,
+            preferred_backend=preferred_backend,
+        )
+        if probe.get("ok"):
+            return {
+                "access_token": str(probe.get("access_token") or ""),
+                "scope_label": probe.get("scope_label", ""),
+                "expires_in": probe.get("expires_in", 0),
+                "endpoint": probe.get("endpoint", ""),
+            }
         self._log(f"[微软邮箱] OAuth token 获取失败，回退密码登录: {email}")
         return {}
 

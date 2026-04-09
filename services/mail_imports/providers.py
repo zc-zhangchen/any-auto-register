@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from sqlmodel import Session, select
 
+from core.base_mailbox import OutlookMailbox
 from core.applemail_pool import (
     load_applemail_pool_records,
     load_applemail_pool_snapshot,
@@ -12,6 +13,12 @@ from core.config_store import config_store
 from core.db import OutlookAccountModel, engine
 
 from .base import BaseMailImportStrategy
+from .microsoft_import_rules import (
+    DuplicateMicrosoftMailboxRule,
+    MicrosoftMailboxAvailabilityRule,
+    MicrosoftMailImportRuleEngine,
+    parse_microsoft_import_record,
+)
 from .schemas import (
     MailImportBatchDeleteRequest,
     MailImportDeleteItem,
@@ -260,17 +267,17 @@ class AppleMailImportStrategy(BaseMailImportStrategy):
         )
 
 
-class OutlookImportStrategy(BaseMailImportStrategy):
+class MicrosoftMailImportStrategy(BaseMailImportStrategy):
     @property
     def descriptor(self) -> MailImportProviderDescriptor:
         return MailImportProviderDescriptor(
             type="microsoft",
             label="微软邮箱（Outlook / Hotmail，本地导入）",
             description="导入微软邮箱本地账号池，运行时从数据库取账号并通过 Graph / IMAP 策略轮询邮件（默认 Graph）。",
-            helper_text="每行格式：邮箱----密码 或 邮箱----密码----client_id----refresh_token（默认走 Graph，缺少 OAuth 凭据时自动回退 IMAP）",
+            helper_text="每行格式：邮箱----密码----client_id----refresh_token；导入时会执行微软邮箱可用性检测，缺少 OAuth 凭据或命中 service abuse mode 的账号不会入库。",
             content_placeholder=(
-                "example@outlook.com----password\n"
-                "example@outlook.com----password----client_id----refresh_token"
+                "example@outlook.com----password----client_id----refresh_token\n"
+                "example@hotmail.com----password----client_id----refresh_token"
             ),
             preview_empty_text="当前还没有已导入的微软邮箱本地账号。",
         )
@@ -303,49 +310,48 @@ class OutlookImportStrategy(BaseMailImportStrategy):
 
     def execute(self, request: MailImportExecuteRequest) -> MailImportResponse:
         lines = (request.content or "").splitlines()
-        success = 0
-        failed = 0
-        errors: list[str] = []
-        accounts: list[dict[str, object]] = []
-
         actionable_lines = [
             (idx, str(raw_line or "").strip())
             for idx, raw_line in enumerate(lines, start=1)
             if str(raw_line or "").strip() and not str(raw_line or "").strip().startswith("#")
         ]
+        success = 0
+        failed = 0
+        errors: list[str] = []
+        accounts: list[dict[str, object]] = []
+        mailbox = OutlookMailbox()
 
         with Session(engine) as session:
+            existing_emails = {
+                str(email or "").strip()
+                for email in session.exec(select(OutlookAccountModel.email)).all()
+            }
+            engine_ctx = {"existing_emails": existing_emails}
+            rule_engine = MicrosoftMailImportRuleEngine([
+                DuplicateMicrosoftMailboxRule(),
+                MicrosoftMailboxAvailabilityRule(mailbox),
+            ])
+
             for line_number, line in actionable_lines:
-                parts = [part.strip() for part in line.split("----")]
-                if len(parts) < 2:
+                try:
+                    record = parse_microsoft_import_record(line_number, line)
+                except ValueError as exc:
                     failed += 1
-                    errors.append(f"行 {line_number}: 格式错误，至少需要邮箱和密码")
+                    errors.append(str(exc))
                     continue
 
-                email = parts[0]
-                password = parts[1]
-                if "@" not in email:
+                result = rule_engine.evaluate(record, engine_ctx)
+                if not result.get("ok"):
                     failed += 1
-                    errors.append(f"行 {line_number}: 无效的邮箱地址: {email}")
+                    errors.append(str(result.get("message") or f"行 {line_number}: 导入失败"))
                     continue
-
-                existing = session.exec(
-                    select(OutlookAccountModel).where(OutlookAccountModel.email == email)
-                ).first()
-                if existing:
-                    failed += 1
-                    errors.append(f"行 {line_number}: 邮箱已存在: {email}")
-                    continue
-
-                client_id = parts[2] if len(parts) >= 3 else ""
-                refresh_token = parts[3] if len(parts) >= 4 else ""
 
                 try:
                     account = OutlookAccountModel(
-                        email=email,
-                        password=password,
-                        client_id=client_id,
-                        refresh_token=refresh_token,
+                        email=record.email,
+                        password=record.password,
+                        client_id=record.client_id,
+                        refresh_token=record.refresh_token,
                         enabled=bool(request.enabled),
                         created_at=_utcnow(),
                         updated_at=_utcnow(),
@@ -353,14 +359,13 @@ class OutlookImportStrategy(BaseMailImportStrategy):
                     session.add(account)
                     session.commit()
                     session.refresh(account)
-
-                    payload = {
+                    existing_emails.add(record.email)
+                    accounts.append({
                         "id": account.id,
                         "email": account.email,
-                        "has_oauth": bool(account.client_id and account.refresh_token),
+                        "has_oauth": True,
                         "enabled": account.enabled,
-                    }
-                    accounts.append(payload)
+                    })
                     success += 1
                 except Exception as exc:
                     session.rollback()

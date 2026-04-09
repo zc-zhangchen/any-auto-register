@@ -134,12 +134,9 @@ function buildDisplayProviders(providers: MailImportProviderDescriptor[]) {
         type: 'outlook',
         apiType: 'microsoft',
         label: 'Outlook',
-        description: '导入 Outlook 本地号池，运行时按 Graph / IMAP 策略轮询邮件，默认 Graph。',
-        helper_text: '每行格式：邮箱----密码 或 邮箱----密码----client_id----refresh_token；建议这里导入 @outlook 账号。',
-        content_placeholder: (
-          'example@outlook.com----password\n'
-          + 'example@outlook.com----password----client_id----refresh_token'
-        ),
+        description: '导入 Outlook 本地号池，仅保留通过 Microsoft 可用性检测的账号；导入格式固定为邮箱----密码----client_id----refresh_token，运行时按 Graph / IMAP 策略轮询邮件，默认 Graph。',
+        helper_text: '每行固定格式：邮箱----密码----client_id----refresh_token；仅建议导入 @outlook 账号，且必须提供完整 OAuth 凭据才能通过 Microsoft 可用性检测。',
+        content_placeholder: 'example@outlook.com----password----client_id----refresh_token',
         preview_empty_text: '当前还没有可预览的 Outlook 已导入账号。',
       },
       {
@@ -147,12 +144,9 @@ function buildDisplayProviders(providers: MailImportProviderDescriptor[]) {
         type: 'hotmail',
         apiType: 'microsoft',
         label: 'Hotmail',
-        description: '导入 Hotmail 本地号池，运行时按 Graph / IMAP 策略轮询邮件，默认 Graph。',
-        helper_text: '每行格式：邮箱----密码 或 邮箱----密码----client_id----refresh_token；建议这里导入 @hotmail 账号。',
-        content_placeholder: (
-          'example@hotmail.com----password\n'
-          + 'example@hotmail.com----password----client_id----refresh_token'
-        ),
+        description: '导入 Hotmail 本地号池，仅保留通过 Microsoft 可用性检测的账号；导入格式固定为邮箱----密码----client_id----refresh_token，运行时按 Graph / IMAP 策略轮询邮件，默认 Graph。',
+        helper_text: '每行固定格式：邮箱----密码----client_id----refresh_token；仅建议导入 @hotmail 账号，且必须提供完整 OAuth 凭据才能通过 Microsoft 可用性检测。',
+        content_placeholder: 'example@hotmail.com----password----client_id----refresh_token',
         preview_empty_text: '当前还没有可预览的 Hotmail 已导入账号。',
       },
     )
