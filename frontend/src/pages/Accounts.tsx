@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import {
   Table,
   Button,
+  Checkbox,
   Input,
   InputNumber,
   Select,
@@ -542,6 +543,7 @@ export default function Accounts() {
   const [detailForm] = Form.useForm()
   const { mode: chatgptRegistrationMode, setMode: setChatgptRegistrationMode } =
     usePersistentChatGPTRegistrationMode()
+  const registerAutoPauseOnHttp400 = Form.useWatch('auto_pause_on_http_400', registerForm) !== false
   const [importText, setImportText] = useState('')
   const [importLoading, setImportLoading] = useState(false)
   const [taskId, setTaskId] = useState<string | null>(null)
@@ -805,6 +807,7 @@ export default function Accounts() {
           count: values.count,
           concurrency: values.concurrency,
           register_delay_seconds: values.register_delay_seconds || 0,
+          auto_pause_on_http_400: values.auto_pause_on_http_400 !== false,
           executor_type: executorType,
           captcha_solver: cfg.default_captcha_solver || 'yescaptcha',
           proxy: null,
@@ -1368,15 +1371,42 @@ export default function Accounts() {
         maskClosable={false}
       >
         {!taskId ? (
-          <Form form={registerForm} layout="vertical" onFinish={handleRegister}>
-            <Form.Item name="count" label="注册数量" initialValue={1} rules={[{ required: true }]}>
+          <Form
+            form={registerForm}
+            layout="vertical"
+            onFinish={handleRegister}
+            initialValues={{
+              count: 1,
+              concurrency: 1,
+              register_delay_seconds: 0,
+              auto_pause_on_http_400: true,
+            }}
+          >
+            <Form.Item name="count" label="注册数量" rules={[{ required: true }]}>
               <Input type="number" min={1} />
             </Form.Item>
-            <Form.Item name="concurrency" label="并发数" initialValue={1} rules={[{ required: true }]}>
+            <Form.Item name="concurrency" label="并发数" rules={[{ required: true }]}>
               <Input type="number" min={1} max={5} />
             </Form.Item>
-            <Form.Item name="register_delay_seconds" label="每个注册延迟(秒)" initialValue={0}>
+            <Form.Item name="register_delay_seconds" label="每个注册延迟(秒)">
               <InputNumber min={0} precision={1} step={0.5} style={{ width: '100%' }} placeholder="0 = 不延迟" />
+            </Form.Item>
+            <Form.Item label="风控策略" style={{ marginBottom: 16 }}>
+              <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                <Alert
+                  showIcon
+                  type={registerAutoPauseOnHttp400 ? 'warning' : 'info'}
+                  message={registerAutoPauseOnHttp400 ? '已开启 HTTP 400 自动暂停' : '已关闭 HTTP 400 自动暂停'}
+                  description={
+                    registerAutoPauseOnHttp400
+                      ? '命中 HTTP 400 时会暂停整个注册任务，避免继续消耗邮箱。'
+                      : '命中 HTTP 400 时只记录失败，任务会继续执行。'
+                  }
+                />
+                <Form.Item name="auto_pause_on_http_400" valuePropName="checked" noStyle>
+                  <Checkbox>命中 HTTP 400 时自动暂停整个任务</Checkbox>
+                </Form.Item>
+              </Space>
             </Form.Item>
             {currentPlatform === 'chatgpt' && (
               <Form.Item label="ChatGPT Token 方案">

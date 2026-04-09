@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
+  Alert,
   Card,
   Form,
   Input,
@@ -191,6 +192,7 @@ export default function RegisterTaskPage() {
         count: values.count,
         concurrency: values.concurrency,
         register_delay_seconds: values.register_delay_seconds || 0,
+        auto_pause_on_http_400: values.auto_pause_on_http_400 !== false,
         proxy: values.proxy || null,
         executor_type: values.executor_type,
         captcha_solver: values.captcha_solver,
@@ -206,7 +208,7 @@ export default function RegisterTaskPage() {
     const interval = setInterval(async () => {
       const t = await apiFetch(`/tasks/${id}`)
       setTask(t)
-      if (t.status === 'done' || t.status === 'failed' || t.status === 'stopped') {
+      if (t.status === 'done' || t.status === 'failed' || t.status === 'stopped' || t.status === 'paused') {
         clearInterval(interval)
         setPolling(false)
         if (t.cashier_urls && t.cashier_urls.length > 0) {
@@ -221,6 +223,7 @@ export default function RegisterTaskPage() {
   const mailProvider = resolveEffectiveMailProvider(String(mailProviderRaw || ''), String(mailImportSource || 'microsoft'))
   const captchaSolver = Form.useWatch('captcha_solver', form)
   const platform = Form.useWatch('platform', form)
+  const autoPauseOnHttp400 = Form.useWatch('auto_pause_on_http_400', form) !== false
   const executorOptions = getExecutorOptions(platform)
 
   useEffect(() => {
@@ -253,6 +256,7 @@ export default function RegisterTaskPage() {
         count: 1,
         concurrency: 1,
         register_delay_seconds: 0,
+        auto_pause_on_http_400: true,
         maliapi_base_url: 'https://maliapi.215.im/v1',
         maliapi_auto_domain_strategy: 'balanced',
         solver_url: 'http://localhost:8889',
@@ -299,6 +303,23 @@ export default function RegisterTaskPage() {
               <Input placeholder="http://user:pass@host:port" />
             </Form.Item>
           </Space>
+          <Form.Item label="风控策略" style={{ marginBottom: 16 }}>
+            <Space direction="vertical" size={12} style={{ width: '100%' }}>
+              <Alert
+                showIcon
+                type={autoPauseOnHttp400 ? 'warning' : 'info'}
+                message={autoPauseOnHttp400 ? '已开启 HTTP 400 自动暂停' : '已关闭 HTTP 400 自动暂停'}
+                description={
+                  autoPauseOnHttp400
+                    ? '命中 HTTP 400 时会暂停整个注册任务，避免继续消耗邮箱。'
+                    : '命中 HTTP 400 时只记录失败，任务会继续执行。'
+                }
+              />
+              <Form.Item name="auto_pause_on_http_400" valuePropName="checked" noStyle>
+                <Checkbox>命中 HTTP 400 时自动暂停整个任务</Checkbox>
+              </Form.Item>
+            </Space>
+          </Form.Item>
           {platform === 'chatgpt' && (
             <Form.Item label="ChatGPT Token 方案">
               <ChatGPTRegistrationModeSwitch
@@ -621,6 +642,7 @@ export default function RegisterTaskPage() {
             <span>任务状态</span>
             <Tag color={
               task.status === 'done' ? 'success' :
+              task.status === 'paused' ? 'warning' :
               task.status === 'stopped' ? 'warning' :
               task.status === 'failed' ? 'error' : 'processing'
             }>

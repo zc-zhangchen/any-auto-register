@@ -14,6 +14,9 @@ sys.modules.setdefault("smstome_tool", smstome_tool_stub)
 
 from platforms.chatgpt.oauth_client import OAuthClient
 from platforms.chatgpt.chatgpt_client import ChatGPTClient
+from platforms.chatgpt.access_token_only_registration_engine import (
+    AccessTokenOnlyRegistrationEngine,
+)
 from platforms.chatgpt.refresh_token_registration_engine import (
     RefreshTokenRegistrationEngine,
 )
@@ -221,6 +224,102 @@ class RefreshTokenRegistrationEngineTests(unittest.TestCase):
         self.assertEqual(call_args[0].args[0], "user1@example.com")
         self.assertEqual(call_args[1].args[0], "user2@example.com")
 
+    @mock.patch("platforms.chatgpt.refresh_token_registration_engine.OAuthManager")
+    @mock.patch("platforms.chatgpt.refresh_token_registration_engine.OAuthClient")
+    @mock.patch(
+        "platforms.chatgpt.refresh_token_registration_engine.ChatGPTClient"
+    )
+    def test_run_enables_cached_code_retry_for_post_register_new_oauth_session(
+        self,
+        mock_register_client_cls,
+        mock_oauth_client_cls,
+        mock_oauth_manager_cls,
+    ):
+        register_client = mock.Mock()
+        register_client.ua = "UA"
+        register_client.sec_ch_ua = '"Chromium";v="136"'
+        register_client.impersonate = "chrome136"
+        register_client.register_complete_flow.return_value = (
+            True,
+            "registration complete",
+        )
+        mock_register_client_cls.return_value = register_client
+
+        oauth_client = mock.Mock()
+        oauth_client.last_error = ""
+        oauth_client.last_workspace_id = "ws-1"
+        oauth_client.login_and_get_tokens.return_value = {
+            "access_token": "at",
+            "refresh_token": "rt",
+            "id_token": "id-token",
+            "account_id": "acct-1",
+        }
+        oauth_client._decode_oauth_session_cookie.return_value = {
+            "workspaces": [{"id": "ws-1"}]
+        }
+        oauth_client._get_cookie_value.return_value = "session-1"
+        mock_oauth_client_cls.return_value = oauth_client
+
+        oauth_manager = mock.Mock()
+        oauth_manager.extract_account_info.return_value = {
+            "email": "user@example.com",
+            "account_id": "acct-1",
+        }
+        mock_oauth_manager_cls.return_value = oauth_manager
+
+        engine = self._make_engine(browser_mode="protocol")
+        result = engine.run()
+
+        self.assertTrue(result.success)
+        login_kwargs = oauth_client.login_and_get_tokens.call_args.kwargs
+        self.assertTrue(login_kwargs["force_new_browser"])
+        self.assertEqual(
+            login_kwargs["login_source"],
+            "post_register_workspace_continue",
+        )
+        self.assertTrue(login_kwargs["allow_cached_code_retry"])
+
+
+class AccessTokenOnlyRegistrationEngineTests(unittest.TestCase):
+    def test_run_does_not_retry_after_http_400_registration_failure(self):
+        class RotatingEmailService:
+            service_type = type("ST", (), {"value": "dummy"})()
+
+            def __init__(self):
+                self.created = []
+
+            def create_email(self):
+                email = f"user{len(self.created) + 1}@example.com"
+                self.created.append(email)
+                return {"email": email, "service_id": email}
+
+            def get_verification_code(self, **kwargs):
+                return "123456"
+
+        email_service = RotatingEmailService()
+        client = mock.Mock()
+        client.register_complete_flow.return_value = (
+            False,
+            "注册失败: 400 - rate limited",
+        )
+
+        with mock.patch(
+            "platforms.chatgpt.access_token_only_registration_engine.ChatGPTClient",
+            return_value=client,
+        ):
+            engine = AccessTokenOnlyRegistrationEngine(
+                email_service=email_service,
+                proxy_url="http://127.0.0.1:7890",
+                callback_logger=lambda msg: None,
+                max_retries=3,
+            )
+            result = engine.run()
+
+        self.assertFalse(result.success)
+        self.assertIn("400", result.error_message)
+        self.assertEqual(email_service.created, ["user1@example.com"])
+        client.register_complete_flow.assert_called_once()
+
 
 class OAuthClientPasswordlessTests(unittest.TestCase):
     def _make_client(self):
@@ -335,6 +434,37 @@ class OAuthClientPasswordlessTests(unittest.TestCase):
         self.assertEqual(tokens["access_token"], "at")
         follow_state.assert_called_once()
         handle_phone.assert_not_called()
+
+    def test_login_and_get_tokens_forwards_cached_code_retry_to_otp_handler(self):
+        client = self._make_client()
+        email_otp_state = FlowState(
+            page_type="email_otp_verification",
+            continue_url="https://auth.openai.com/email-verification",
+            current_url="https://auth.openai.com/email-verification",
+        )
+        consent_state = FlowState(
+            page_type="consent",
+            continue_url="https://auth.openai.com/sign-in-with-chatgpt/codex/consent",
+            current_url="https://auth.openai.com/sign-in-with-chatgpt/codex/consent",
+        )
+
+        with mock.patch.object(client, "_bootstrap_oauth_session", return_value="https://auth.openai.com/log-in"), \
+            mock.patch.object(client, "_submit_authorize_continue", return_value=email_otp_state), \
+            mock.patch.object(client, "_handle_otp_verification", return_value=consent_state) as handle_otp, \
+            mock.patch.object(client, "_oauth_submit_workspace_and_org", return_value=("auth-code", None)), \
+            mock.patch.object(client, "_exchange_code_for_tokens", return_value={"access_token": "at"}):
+            tokens = client.login_and_get_tokens(
+                "user@example.com",
+                "Secret123!",
+                "device-fixed",
+                skymail_client=mock.Mock(),
+                prefer_passwordless_login=True,
+                allow_phone_verification=False,
+                allow_cached_code_retry=True,
+            )
+
+        self.assertEqual(tokens["access_token"], "at")
+        self.assertTrue(handle_otp.call_args.kwargs["allow_cached_code_retry"])
 
     def test_login_and_get_tokens_uses_canonical_consent_url_when_state_is_add_phone(self):
         client = self._make_client()

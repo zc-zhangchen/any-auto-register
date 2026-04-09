@@ -1656,6 +1656,7 @@ class OAuthClient:
         birthdate="",
         login_source="",
         stop_after_login=False,
+        allow_cached_code_retry=False,
         _continue_depth=0,
     ):
         """
@@ -1679,6 +1680,7 @@ class OAuthClient:
             last_name: about_you 姓氏
             birthdate: about_you 生日，格式 YYYY-MM-DD
             login_source: 当前登录场景，仅用于日志
+            allow_cached_code_retry: 是否允许优先尝试最近一次缓存验证码
 
         Returns:
             dict: tokens 字典，包含 access_token, refresh_token, id_token
@@ -1699,7 +1701,8 @@ class OAuthClient:
             f"force_password_login={'on' if force_password_login else 'off'}, "
             f"force_chatgpt_entry={'on' if force_chatgpt_entry else 'off'}, "
             f"screen_hint={screen_hint or 'login'}, "
-            f"stop_after_login={'on' if stop_after_login else 'off'}"
+            f"stop_after_login={'on' if stop_after_login else 'off'}, "
+            f"allow_cached_code_retry={'on' if allow_cached_code_retry else 'off'}"
         )
 
         if force_new_browser:
@@ -1920,7 +1923,7 @@ class OAuthClient:
                     skymail_client,
                     state,
                     prefer_passwordless_login=prefer_passwordless_login,
-                    allow_cached_code_retry=_continue_depth > 0,
+                    allow_cached_code_retry=allow_cached_code_retry or _continue_depth > 0,
                 )
                 if not next_state:
                     if not self.last_error:
@@ -2027,6 +2030,7 @@ class OAuthClient:
                                 if login_source
                                 else "add_phone_continue"
                             ),
+                            allow_cached_code_retry=allow_cached_code_retry,
                             _continue_depth=_continue_depth + 1,
                         )
                     else:

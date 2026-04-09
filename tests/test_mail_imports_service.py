@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from sqlmodel import SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine, select
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -199,6 +199,164 @@ class MailImportServiceTests(unittest.TestCase):
                     self.assertEqual(response.snapshot.count, 1)
                     self.assertEqual(response.snapshot.items[0].email, "first@outlook.com")
                     self.assertIn("service abuse mode", response.errors[0])
+            finally:
+                test_engine.dispose()
+
+    def test_microsoft_snapshot_only_shows_available_accounts(self):
+        from core.db import OutlookAccountLeaseModel, OutlookAccountModel
+        from services.mail_imports.providers import MicrosoftMailImportStrategy
+        from services.mail_imports.schemas import MailImportSnapshotRequest
+
+        strategy = MicrosoftMailImportStrategy()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            test_engine = create_engine(f"sqlite:///{Path(tmp_dir) / 'mail-imports.db'}")
+            SQLModel.metadata.create_all(test_engine)
+
+            try:
+                with Session(test_engine) as session:
+                    session.add(
+                        OutlookAccountModel(
+                            email="available@outlook.com",
+                            password="password",
+                            client_id="client-a",
+                            refresh_token="refresh-a",
+                            enabled=True,
+                        )
+                    )
+                    session.add(
+                        OutlookAccountModel(
+                            email="disabled@outlook.com",
+                            password="password",
+                            client_id="client-b",
+                            refresh_token="refresh-b",
+                            enabled=False,
+                        )
+                    )
+                    session.add(
+                        OutlookAccountLeaseModel(
+                            email="recoverable@hotmail.com",
+                            password="password",
+                            client_id="client-c",
+                            refresh_token="refresh-c",
+                            status="recoverable",
+                            last_error="token_exchange failed",
+                        )
+                    )
+                    session.commit()
+
+                with patch("services.mail_imports.providers.engine", test_engine):
+                    snapshot = strategy.get_snapshot(
+                        MailImportSnapshotRequest(
+                            type="microsoft",
+                            preview_limit=10,
+                        )
+                    )
+
+                self.assertEqual(snapshot.count, 1)
+                self.assertEqual([item.email for item in snapshot.items], ["available@outlook.com"])
+            finally:
+                test_engine.dispose()
+
+    def test_recovery_pool_filters_hotmail_recoverable_items(self):
+        from core.db import OutlookAccountLeaseModel
+        from services.mail_imports.recovery_pool import get_microsoft_recovery_pool
+        from services.mail_imports.schemas import MailRecoveryPoolRequest
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            test_engine = create_engine(f"sqlite:///{Path(tmp_dir) / 'recovery-pool.db'}")
+            SQLModel.metadata.create_all(test_engine)
+
+            try:
+                with Session(test_engine) as session:
+                    session.add(
+                        OutlookAccountLeaseModel(
+                            email="recoverable@hotmail.com",
+                            password="password",
+                            client_id="client-a",
+                            refresh_token="refresh-a",
+                            status="recoverable",
+                            task_attempt_id="attempt-1",
+                            last_error="token_exchange failed",
+                        )
+                    )
+                    session.add(
+                        OutlookAccountLeaseModel(
+                            email="leased@outlook.com",
+                            password="password",
+                            client_id="client-b",
+                            refresh_token="refresh-b",
+                            status="leased",
+                            task_attempt_id="attempt-2",
+                        )
+                    )
+                    session.add(
+                        OutlookAccountLeaseModel(
+                            email="other@live.com",
+                            password="password",
+                            client_id="client-c",
+                            refresh_token="refresh-c",
+                            status="recoverable",
+                            task_attempt_id="attempt-3",
+                        )
+                    )
+                    session.commit()
+
+                with patch("services.mail_imports.recovery_pool.engine", test_engine):
+                    snapshot = get_microsoft_recovery_pool(
+                        MailRecoveryPoolRequest(
+                            mailbox_type="hotmail",
+                            status="recoverable",
+                            limit=10,
+                        )
+                    )
+
+                self.assertEqual(snapshot.count, 1)
+                self.assertEqual([item.email for item in snapshot.items], ["recoverable@hotmail.com"])
+                self.assertEqual(snapshot.summary.total, 3)
+                self.assertEqual(snapshot.summary.recoverable, 2)
+                self.assertEqual(snapshot.summary.leased, 1)
+                self.assertEqual(snapshot.summary.hotmail, 1)
+                self.assertEqual(snapshot.summary.outlook, 1)
+                self.assertEqual(snapshot.summary.other, 1)
+            finally:
+                test_engine.dispose()
+
+    def test_restore_recovery_item_moves_mailbox_back_to_available_pool(self):
+        from core.db import OutlookAccountLeaseModel, OutlookAccountModel
+        from services.mail_imports.recovery_pool import restore_microsoft_recovery_item
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            test_engine = create_engine(f"sqlite:///{Path(tmp_dir) / 'restore-recovery.db'}")
+            SQLModel.metadata.create_all(test_engine)
+
+            try:
+                with Session(test_engine) as session:
+                    session.add(
+                        OutlookAccountLeaseModel(
+                            email="restore@hotmail.com",
+                            password="password",
+                            client_id="client-a",
+                            refresh_token="refresh-a",
+                            status="recoverable",
+                            task_attempt_id="attempt-restore",
+                            last_error="token_exchange failed",
+                        )
+                    )
+                    session.commit()
+                    lease = session.exec(select(OutlookAccountLeaseModel)).first()
+
+                with patch("services.mail_imports.recovery_pool.engine", test_engine):
+                    restored = restore_microsoft_recovery_item(int(lease.id or 0))
+
+                self.assertEqual(restored.email, "restore@hotmail.com")
+                self.assertEqual(restored.status, "recoverable")
+
+                with Session(test_engine) as session:
+                    available = session.exec(select(OutlookAccountModel)).all()
+                    remaining = session.exec(select(OutlookAccountLeaseModel)).all()
+
+                self.assertEqual([item.email for item in available], ["restore@hotmail.com"])
+                self.assertEqual(len(remaining), 0)
             finally:
                 test_engine.dispose()
 

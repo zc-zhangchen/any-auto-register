@@ -501,6 +501,7 @@ class RefreshTokenRegistrationEngine:
                     last_name=last_name,
                     birthdate=birthdate,
                     login_source="post_register_workspace_continue",
+                    allow_cached_code_retry=True,
                 )
             else:
                 self._log("3. 新开 OAuth session，按 screen_hint=login + passwordless OTP 登录...")
@@ -526,6 +527,7 @@ class RefreshTokenRegistrationEngine:
                     login_source=(
                         "existing_account_continue" if source == "login" else "post_register_workspace_continue"
                     ),
+                    allow_cached_code_retry=(source != "login"),
                 )
 
             if not tokens:
