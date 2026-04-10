@@ -114,8 +114,8 @@ class TokenRefreshManager:
             if expires_str:
                 try:
                     expires_at = datetime.fromisoformat(expires_str.replace("Z", "+00:00"))
-                except:
-                    pass
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Failed to parse expiration date '{expires_str}': {e}")
 
             result.success = True
             result.access_token = access_token
