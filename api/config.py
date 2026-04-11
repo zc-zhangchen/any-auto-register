@@ -7,6 +7,8 @@ from services.mail_imports import MailImportExecuteRequest, MailImportSnapshotRe
 router = APIRouter(prefix="/config", tags=["config"])
 
 CONFIG_KEYS = [
+    "email_domain_rule_enabled",
+    "email_domain_level_count",
     "laoudo_auth",
     "laoudo_email",
     "laoudo_account_id",
@@ -113,6 +115,9 @@ CONFIG_KEYS = [
     "contribution_enabled",
     "contribution_server_url",
     "contribution_key",
+    "contribution_mode",
+    "custom_contribution_url",
+    "custom_contribution_token",
 ]
 
 
@@ -156,10 +161,18 @@ def get_config():
         all_cfg["contribution_enabled"] = "0"
     if not all_cfg.get("contribution_server_url"):
         all_cfg["contribution_server_url"] = "http://new.xem8k5.top:7317/"
+    if not all_cfg.get("contribution_mode"):
+        all_cfg["contribution_mode"] = "codex"
+    if not all_cfg.get("custom_contribution_url"):
+        all_cfg["custom_contribution_url"] = "http://127.0.0.1:5000"
     if not all_cfg.get("external_apps_update_mode"):
         all_cfg["external_apps_update_mode"] = "tag"
     if not all_cfg.get("ddg_daily_limit"):
         all_cfg["ddg_daily_limit"] = "50"
+    if not str(all_cfg.get("email_domain_rule_enabled", "") or "").strip():
+        all_cfg["email_domain_rule_enabled"] = "0"
+    if not str(all_cfg.get("email_domain_level_count", "") or "").strip():
+        all_cfg["email_domain_level_count"] = "2"
     # 只返回已知 key，未设置的返回空字符串
     return {k: all_cfg.get(k, "") for k in CONFIG_KEYS}
 
@@ -221,6 +234,19 @@ def update_config(body: ConfigUpdate):
     safe = {k: v for k, v in body.data.items() if k in CONFIG_KEYS}
     if safe.get("mail_provider") == "outlook":
         safe["mail_provider"] = "microsoft"
+    if "email_domain_rule_enabled" in safe:
+        enabled = str(safe.get("email_domain_rule_enabled", "")).strip().lower()
+        safe["email_domain_rule_enabled"] = (
+            "1" if enabled in {"1", "true", "yes", "on"} else "0"
+        )
+    if "email_domain_level_count" in safe:
+        try:
+            level_count = int(str(safe.get("email_domain_level_count", "")).strip())
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="域名级数必须是整数") from exc
+        if level_count < 2:
+            raise HTTPException(status_code=400, detail="域名级数不能小于 2")
+        safe["email_domain_level_count"] = str(level_count)
     config_store.set_many(safe)
     return {"ok": True, "updated": list(safe.keys())}
 

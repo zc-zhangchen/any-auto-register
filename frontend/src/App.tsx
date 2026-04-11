@@ -10,6 +10,7 @@ import {
   SunOutlined,
   MoonOutlined,
   LogoutOutlined,
+  PlayCircleOutlined,
 } from '@ant-design/icons'
 import zhCN from 'antd/locale/zh_CN'
 import Dashboard from '@/pages/Dashboard'
@@ -18,6 +19,7 @@ import RegisterTaskPage from '@/pages/RegisterTaskPage'
 import Proxies from '@/pages/Proxies'
 import Settings from '@/pages/Settings'
 import TaskHistory from '@/pages/TaskHistory'
+import RunningTasks from '@/pages/RunningTasks'
 import Login from '@/pages/Login'
 import { darkTheme, lightTheme } from './theme'
 import { apiFetch, clearToken, getToken } from '@/lib/utils'
@@ -94,6 +96,7 @@ function AppContent() {
     if (path === '/history') return ['/history']
     if (path === '/proxies') return ['/proxies']
     if (path === '/settings') return ['/settings']
+    if (path === '/running-tasks') return ['/running-tasks']
     return ['/']
   }
 
@@ -104,13 +107,20 @@ function AppContent() {
       label: '仪表盘',
     },
     {
+      key: '/running-tasks',
+      icon: <PlayCircleOutlined />,
+      label: '任务运行',
+    },
+    {
       key: '/accounts',
       icon: <UserOutlined />,
       label: '平台管理',
-      children: platforms.map(p => ({
-        key: `/accounts/${p.key}`,
-        label: p.label,
-      })),
+      children: [
+        ...platforms.map(p => ({
+          key: `/accounts/${p.key}`,
+          label: p.label,
+        })),
+      ],
     },
     {
       key: '/history',
@@ -230,6 +240,7 @@ function AppContent() {
             <Route path="/accounts" element={<Accounts />} />
             <Route path="/accounts/:platform" element={<Accounts />} />
             <Route path="/register" element={<RegisterTaskPage />} />
+            <Route path="/running-tasks" element={<RunningTasks />} />
             <Route path="/history" element={<TaskHistory />} />
             <Route path="/proxies" element={<Proxies />} />
             <Route path="/settings" element={<Settings />} />

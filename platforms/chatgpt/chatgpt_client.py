@@ -12,7 +12,7 @@ from core.proxy_utils import build_requests_proxy_config
 try:
     from curl_cffi import requests as curl_requests
 except ImportError:
-    print("❌ 需要安装 curl_cffi: pip install curl_cffi")
+    print("[FAIL] 需要安装 curl_cffi: pip install curl_cffi")
     import sys
 
     sys.exit(1)
@@ -1079,7 +1079,7 @@ class ChatGPTClient:
 
             if self._is_registration_complete_state(state):
                 self.last_registration_state = state
-                self._log("✅ 注册流程完成")
+                self._log("[OK] 注册流程完成")
                 return True, "注册成功"
 
             if self._state_is_password_registration(state):

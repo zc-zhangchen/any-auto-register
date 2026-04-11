@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 
 MailImportProviderType = Literal["applemail", "microsoft"]
+MailImportAccountType = Literal["microsoft_oauth", "mailapi_url"]
 
 DEFAULT_PREVIEW_LIMIT = 100
 MAX_PREVIEW_LIMIT = 500
@@ -29,6 +30,7 @@ class MailImportSnapshotItem(BaseModel):
     mailbox: str = ""
     enabled: bool | None = None
     has_oauth: bool | None = None
+    account_type: MailImportAccountType | None = None
 
 
 class MailImportSnapshotRequest(BaseModel):
@@ -50,6 +52,9 @@ class MailImportExecuteRequest(BaseModel):
     pool_file: str = ""
     enabled: bool = True
     bind_to_config: bool = True
+    alias_split_enabled: bool = False
+    alias_split_count: int = Field(default=5, ge=1, le=5)
+    alias_include_original: bool = False
     preview_limit: int = Field(
         default=DEFAULT_PREVIEW_LIMIT,
         ge=1,

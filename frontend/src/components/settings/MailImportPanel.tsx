@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { App, Alert, Button, Card, Form, Input, Popconfirm, Select, Space, Table, Tag, Typography } from 'antd'
+import { App, Alert, Button, Card, Form, Input, InputNumber, Popconfirm, Select, Space, Switch, Table, Tag, Typography } from 'antd'
 import type { FormInstance } from 'antd'
 
 import { apiFetch } from '@/lib/utils'
 
 type MailImportProviderType = 'applemail' | 'microsoft'
-type MailImportSelectionType = MailImportProviderType | 'outlook' | 'hotmail'
+type MailImportSelectionType = MailImportProviderType | 'outlook' | 'hotmail' | 'mailapi'
 type MailImportFormProviderType = MailImportProviderType | 'mail_import'
 
 interface MailImportPanelProps {
@@ -35,6 +35,7 @@ interface MailImportSnapshotItem {
   mailbox: string
   enabled?: boolean | null
   has_oauth?: boolean | null
+  account_type?: 'microsoft_oauth' | 'mailapi_url' | null
 }
 
 interface MailImportSnapshot {
@@ -63,7 +64,7 @@ interface MailImportResult {
 }
 
 const SUPPORTED_IMPORT_TYPES: MailImportProviderType[] = ['applemail', 'microsoft']
-const SUPPORTED_SELECTION_TYPES: MailImportSelectionType[] = ['applemail', 'microsoft', 'outlook', 'hotmail']
+const SUPPORTED_SELECTION_TYPES: MailImportSelectionType[] = ['applemail', 'microsoft', 'outlook', 'hotmail', 'mailapi']
 
 function isSupportedImportType(value: string): value is MailImportProviderType {
   return SUPPORTED_IMPORT_TYPES.includes(value as MailImportProviderType)
@@ -134,8 +135,8 @@ function buildDisplayProviders(providers: MailImportProviderDescriptor[]) {
         type: 'outlook',
         apiType: 'microsoft',
         label: 'Outlook',
-        description: '导入 Outlook 本地号池，仅保留通过 Microsoft 可用性检测的账号；导入格式固定为邮箱----密码----client_id----refresh_token，运行时按 Graph / IMAP 策略轮询邮件，默认 Graph。',
-        helper_text: '每行固定格式：邮箱----密码----client_id----refresh_token；仅建议导入 @outlook 账号，且必须提供完整 OAuth 凭据才能通过 Microsoft 可用性检测。',
+        description: '导入 Outlook 本地号池，支持 mixed 导入（OAuth / MailAPI URL）；运行时按账号类型自动选择 Graph/IMAP 或 MailAPI URL 轮询取码。',
+        helper_text: '支持自动识别：邮箱----密码----client_id----refresh_token 或 邮箱----mailapi_url；当前视图仅展示 @outlook 的 OAuth 账号。',
         content_placeholder: 'example@outlook.com----password----client_id----refresh_token',
         preview_empty_text: '当前还没有可预览的 Outlook 已导入账号。',
       },
@@ -144,10 +145,20 @@ function buildDisplayProviders(providers: MailImportProviderDescriptor[]) {
         type: 'hotmail',
         apiType: 'microsoft',
         label: 'Hotmail',
-        description: '导入 Hotmail 本地号池，仅保留通过 Microsoft 可用性检测的账号；导入格式固定为邮箱----密码----client_id----refresh_token，运行时按 Graph / IMAP 策略轮询邮件，默认 Graph。',
-        helper_text: '每行固定格式：邮箱----密码----client_id----refresh_token；仅建议导入 @hotmail 账号，且必须提供完整 OAuth 凭据才能通过 Microsoft 可用性检测。',
+        description: '导入 Hotmail 本地号池，支持 mixed 导入（OAuth / MailAPI URL）；运行时按账号类型自动选择 Graph/IMAP 或 MailAPI URL 轮询取码。',
+        helper_text: '支持自动识别：邮箱----密码----client_id----refresh_token 或 邮箱----mailapi_url；当前视图仅展示 @hotmail 的 OAuth 账号。',
         content_placeholder: 'example@hotmail.com----password----client_id----refresh_token',
         preview_empty_text: '当前还没有可预览的 Hotmail 已导入账号。',
+      },
+      {
+        ...provider,
+        type: 'mailapi',
+        apiType: 'microsoft',
+        label: 'MailAPI URL',
+        description: '导入 MailAPI URL 账号池（邮箱----mailapi_url），运行时通过 URL 轮询网页内容提取验证码。',
+        helper_text: '支持 mixed 导入。当前视图仅展示 account_type=mailapi_url 的账号。',
+        content_placeholder: 'example@hotmail.com----https://mailapi.icu/key?type=html&orderNo=xxxxxxxx',
+        preview_empty_text: '当前还没有可预览的 MailAPI URL 已导入账号。',
       },
     )
   }
@@ -155,10 +166,16 @@ function buildDisplayProviders(providers: MailImportProviderDescriptor[]) {
   return items
 }
 
-function matchesSelectionType(selectionType: MailImportSelectionType, email: string) {
+function matchesSelectionType(
+  selectionType: MailImportSelectionType,
+  email: string,
+  accountType?: string | null,
+) {
   const domain = String(email.split('@')[1] || '').trim().toLowerCase()
-  if (selectionType === 'hotmail') return domain.includes('hotmail')
-  if (selectionType === 'outlook') return domain.includes('outlook')
+  const normalizedType = String(accountType || 'microsoft_oauth').trim().toLowerCase()
+  if (selectionType === 'mailapi') return normalizedType === 'mailapi_url'
+  if (selectionType === 'hotmail') return normalizedType !== 'mailapi_url' && domain.includes('hotmail')
+  if (selectionType === 'outlook') return normalizedType !== 'mailapi_url' && domain.includes('outlook')
   return true
 }
 
@@ -172,7 +189,7 @@ function filterSnapshotBySelection(
 
   return {
     ...snapshot,
-    items: snapshot.items.filter((item) => matchesSelectionType(selectionType, item.email)),
+    items: snapshot.items.filter((item) => matchesSelectionType(selectionType, item.email, item.account_type)),
   }
 }
 
@@ -212,12 +229,17 @@ export default function MailImportPanel({ form }: MailImportPanelProps) {
   const [loadingSnapshot, setLoadingSnapshot] = useState(false)
   const [rawSnapshot, setRawSnapshot] = useState<MailImportSnapshot | null>(null)
   const [result, setResult] = useState<MailImportResult | null>(null)
+  const [aliasSplitEnabled, setAliasSplitEnabled] = useState(false)
+  const [aliasSplitCount, setAliasSplitCount] = useState(5)
+  const [aliasIncludeOriginal, setAliasIncludeOriginal] = useState(false)
 
   const providerMap = useMemo(
     () => new Map(providers.map((provider) => [provider.type, provider])),
     [providers],
   )
   const selectedProvider = providerMap.get(selectedType) ?? null
+  const selectedApiType = selectedProvider?.apiType ?? toImportApiType(selectedType)
+  const supportsAliasSplit = selectedApiType === 'microsoft'
   const preferredImportType = useMemo(
     () => resolvePreferredImportType(
       currentMailProvider,
@@ -322,6 +344,10 @@ export default function MailImportPanel({ form }: MailImportPanelProps) {
       if (apiType === 'applemail') {
         body.filename = filename.trim()
         body.pool_dir = String(form.getFieldValue('applemail_pool_dir') || 'mail').trim() || 'mail'
+      } else {
+        body.alias_split_enabled = aliasSplitEnabled
+        body.alias_split_count = aliasSplitCount
+        body.alias_include_original = aliasIncludeOriginal
       }
 
       const response = await apiFetch('/mail-imports', {
@@ -519,6 +545,16 @@ export default function MailImportPanel({ form }: MailImportPanelProps) {
     } else {
       baseColumns.push(
         {
+          title: '类型',
+          dataIndex: 'account_type',
+          key: 'account_type',
+          width: 120,
+          render: (value: string | null | undefined) => {
+            const isMailApi = String(value || '').trim().toLowerCase() === 'mailapi_url'
+            return <Tag color={isMailApi ? 'purple' : 'blue'}>{isMailApi ? 'MailAPI URL' : 'OAuth'}</Tag>
+          },
+        } as never,
+        {
           title: '状态',
           dataIndex: 'enabled',
           key: 'enabled',
@@ -601,6 +637,41 @@ export default function MailImportPanel({ form }: MailImportPanelProps) {
               placeholder={selectedProvider.filename_placeholder}
             />
           </Form.Item>
+        ) : null}
+
+        {supportsAliasSplit ? (
+          <div
+            style={{
+              border: '1px dashed rgba(127,127,127,0.35)',
+              borderRadius: 8,
+              padding: 12,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+            }}
+          >
+            <Space align="center">
+              <Typography.Text strong>邮箱裂变（别名）</Typography.Text>
+              <Switch checked={aliasSplitEnabled} onChange={setAliasSplitEnabled} />
+              <Typography.Text type="secondary">
+                默认关闭；开启后每个原邮箱生成随机 6 位英文别名
+              </Typography.Text>
+            </Space>
+            {aliasSplitEnabled ? (
+              <Space align="center" wrap>
+                <Typography.Text>每个原邮箱裂变数量</Typography.Text>
+                <InputNumber
+                  min={1}
+                  max={5}
+                  value={aliasSplitCount}
+                  onChange={(value) => setAliasSplitCount(Math.max(1, Math.min(5, Number(value || 5))))}
+                />
+                <Typography.Text type="secondary">（1~5）</Typography.Text>
+                <Typography.Text style={{ marginLeft: 16 }}>包含原邮箱</Typography.Text>
+                <Switch checked={aliasIncludeOriginal} onChange={setAliasIncludeOriginal} />
+              </Space>
+            ) : null}
+          </div>
         ) : null}
 
         <Input.TextArea

@@ -524,6 +524,8 @@ export default function Accounts() {
   const [accounts, setAccounts] = useState<any[]>([])
   const [platformActions, setPlatformActions] = useState<any[]>([])
   const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
@@ -571,7 +573,7 @@ export default function Accounts() {
 
     setLoading(true)
     try {
-      const params = new URLSearchParams({ platform: currentPlatform, page: '1', page_size: '100' })
+      const params = new URLSearchParams({ platform: currentPlatform, page: String(page), page_size: String(pageSize) })
       if (search) params.set('email', search)
       if (filterStatus) params.set('status', filterStatus)
       if (createdAtStart) params.set('created_at_start', createdAtStart)
@@ -582,7 +584,7 @@ export default function Accounts() {
     } finally {
       setLoading(false)
     }
-  }, [currentPlatform, search, filterStatus, createdAtStart, createdAtEnd])
+  }, [currentPlatform, search, filterStatus, createdAtStart, createdAtEnd, page, pageSize])
 
   useEffect(() => {
     load()
@@ -1220,7 +1222,13 @@ export default function Accounts() {
           <Button type="link" size="small" onClick={() => { setCurrentAccount(record); setDetailModalOpen(true); }}>
             详情
           </Button>
-          <Popconfirm title="确认删除？" onConfirm={() => handleDelete(record.id)}>
+          <Popconfirm
+            title="确认删除该账号吗？"
+            onConfirm={() => handleDelete(record.id)}
+            okText="删除"
+            cancelText="取消"
+            okButtonProps={{ danger: true }}
+          >
             <Button type="link" size="small" danger>
               删除
             </Button>
@@ -1257,14 +1265,14 @@ export default function Accounts() {
           <Input.Search
             placeholder="搜索邮箱..."
             allowClear
-            onSearch={setSearch}
+            onSearch={(v) => { setPage(1); setSearch(v) }}
             style={{ width: 200 }}
           />
           <Select
             placeholder="状态筛选"
             allowClear
             style={{ width: 120 }}
-            onChange={setFilterStatus}
+            onChange={(v) => { setPage(1); setFilterStatus(v) }}
             options={[
               { value: 'registered', label: '已注册' },
               { value: 'trial', label: '试用中' },
@@ -1277,13 +1285,13 @@ export default function Accounts() {
             showTime
             allowClear
             placeholder="开始时间"
-            onChange={(value) => setCreatedAtStart(value ? value.toISOString() : '')}
+            onChange={(value) => { setPage(1); setCreatedAtStart(value ? value.toISOString() : '') }}
           />
           <DatePicker
             showTime
             allowClear
             placeholder="结束时间"
-            onChange={(value) => setCreatedAtEnd(value ? value.toISOString() : '')}
+            onChange={(value) => { setPage(1); setCreatedAtEnd(value ? value.toISOString() : '') }}
           />
           <Text type="secondary">{total} 个账号</Text>
           {selectedRowKeys.length > 0 && (
@@ -1319,6 +1327,8 @@ export default function Accounts() {
                   : '确认补传当前筛选范围内远端未发现且本地状态有效的账号？'
               }
               onConfirm={() => handleCpaBackfill(getBackfillScope())}
+              okText="确认"
+              cancelText="取消"
             >
               <Button
                 loading={cpaSyncLoading === 'pending' || cpaSyncLoading === 'selected'}
@@ -1330,7 +1340,13 @@ export default function Accounts() {
             </Popconfirm>
           )}
           {selectedRowKeys.length > 0 && (
-            <Popconfirm title={`确认删除选中的 ${selectedRowKeys.length} 个账号？`} onConfirm={handleBatchDelete}>
+            <Popconfirm
+              title={`确认删除选中的 ${selectedRowKeys.length} 个账号？`}
+              onConfirm={handleBatchDelete}
+              okText="删除"
+              cancelText="取消"
+              okButtonProps={{ danger: true }}
+            >
               <Button danger icon={<DeleteOutlined />}>删除 {selectedRowKeys.length} 个</Button>
             </Popconfirm>
           )}
@@ -1352,7 +1368,7 @@ export default function Accounts() {
           selectedRowKeys,
           onChange: setSelectedRowKeys,
         }}
-        pagination={{ pageSize: 20, showSizeChanger: false }}
+        pagination={{ total, current: page, pageSize, showSizeChanger: true, pageSizeOptions: ['20', '50', '100'], onChange: (p, ps) => { setPage(p); setPageSize(ps) } }}
         scroll={{ x: isChatgptPlatform ? 1440 : 980 }}
         onRow={(record) => ({
           onDoubleClick: () => {
@@ -1376,7 +1392,7 @@ export default function Accounts() {
               <Input type="number" min={1} />
             </Form.Item>
             <Form.Item name="concurrency" label="并发数" initialValue={1} rules={[{ required: true }]}>
-              <Input type="number" min={1} max={5} />
+              <Input type="number" min={1} />
             </Form.Item>
             <Form.Item name="register_delay_seconds" label="每个注册延迟(秒)" initialValue={0}>
               <InputNumber min={0} precision={1} step={0.5} style={{ width: '100%' }} placeholder="0 = 不延迟" />

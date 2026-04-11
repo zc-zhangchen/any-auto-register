@@ -121,6 +121,9 @@ export default function TaskHistory() {
             <Popconfirm
               title={`确认删除选中的 ${selectedRowKeys.length} 条任务历史？`}
               onConfirm={handleBatchDelete}
+              okText="删除"
+              cancelText="取消"
+              okButtonProps={{ danger: true }}
             >
               <Button danger icon={<DeleteOutlined />}>
                 删除 {selectedRowKeys.length} 条

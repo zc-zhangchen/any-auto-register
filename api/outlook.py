@@ -26,10 +26,10 @@ def batch_import_outlook(request: OutlookBatchImportRequest):
     批量导入微软邮箱（Outlook / Hotmail）账户
 
     支持两种格式（每行一个账户，字段用 ---- 分隔）：
-    - 邮箱----密码
-    - 邮箱----密码----client_id----refresh_token
+    - 邮箱----密码----client_id----refresh_token（微软 OAuth）
+    - 邮箱----mailapi_url（MailAPI URL 轮询取码）
 
-    运行时默认优先使用 Graph 后端读取邮件；若账号缺少 OAuth 凭据则自动回退到 IMAP。
+    运行时默认优先使用 Graph 后端读取邮件；MailAPI URL 账号会走 URL 轮询取码。
     """
     try:
         strategy = mail_import_registry.get("microsoft")

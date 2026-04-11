@@ -164,6 +164,8 @@ class RegisterTaskRecord:
             "skipped": self.skipped,
             "errors": list(self.errors),
             "control": self.control.snapshot(),
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
         }
         if self.cashier_urls:
             data["cashier_urls"] = list(self.cashier_urls)

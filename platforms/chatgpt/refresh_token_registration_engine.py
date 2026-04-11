@@ -131,7 +131,7 @@ class EmailServiceAdapter:
         otp_sent_at: float | None = None,
         exclude_codes=None,
     ):
-        excluded = set(exclude_codes or set()) | set(self._used_codes)
+        excluded = set(exclude_codes) if exclude_codes is not None else set(self._used_codes)
         self.log_fn(f"正在等待邮箱 {email} 的验证码 ({timeout}s)...")
         code = self.email_service.get_verification_code(
             email=email,
@@ -323,6 +323,73 @@ class RefreshTokenRegistrationEngine:
             or ""
         ).strip()
 
+    def _parallel_add_phone_retry(
+        self,
+        *,
+        result,
+        register_client,
+        email_adapter,
+        first_name: str,
+        last_name: str,
+        birthdate: str,
+        register_otp_wait_seconds: int,
+        parallel: int = 3,
+    ):
+        """add_phone 阻断后，并行启动多路全新 OAuth session，第一个成功的获胜。"""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        winning_tokens = None
+        winning_client = None
+
+        def _one_attempt(idx):
+            client = self._build_oauth_client()
+            client.config.setdefault(
+                "chatgpt_oauth_otp_wait_seconds", register_otp_wait_seconds
+            )
+            self._log(f"add_phone 并行重试 #{idx + 1}/{parallel} 启动...")
+            t = client.login_and_get_tokens(
+                result.email,
+                self.password,
+                device_id="",
+                user_agent=getattr(register_client, "ua", None),
+                sec_ch_ua=getattr(register_client, "sec_ch_ua", None),
+                impersonate=getattr(register_client, "impersonate", None),
+                skymail_client=email_adapter,
+                prefer_passwordless_login=True,
+                allow_phone_verification=False,
+                force_new_browser=True,
+                force_chatgpt_entry=False,
+                screen_hint="login",
+                force_password_login=False,
+                complete_about_you_if_needed=True,
+                first_name=first_name,
+                last_name=last_name,
+                birthdate=birthdate,
+                login_source=f"add_phone_parallel_{idx}",
+            )
+            return t, client
+
+        with ThreadPoolExecutor(max_workers=parallel) as executor:
+            futures = {executor.submit(_one_attempt, i): i for i in range(parallel)}
+            for future in as_completed(futures):
+                try:
+                    t, client = future.result()
+                    if t and not winning_tokens:
+                        winning_tokens = t
+                        winning_client = client
+                        self._log(
+                            f"add_phone 并行重试 #{futures[future] + 1} 成功，取消其余..."
+                        )
+                        # 取消尚未开始的 futures
+                        for f in futures:
+                            if f is not future:
+                                f.cancel()
+                        break
+                except Exception as exc:
+                    self._log(f"add_phone 并行重试异常: {exc}", "warning")
+
+        return winning_tokens, winning_client
+
     def _populate_result_from_tokens(
         self,
         result: RegistrationResult,
@@ -427,19 +494,31 @@ class RefreshTokenRegistrationEngine:
                 self._log,
             )
 
-            register_client = self._build_chatgpt_client()
-            self._log("2. 执行注册状态机（interrupt 模式：不在注册阶段提交 about_you）...")
-            registered, registration_message = register_client.register_complete_flow(
-                result.email,
-                self.password,
-                first_name,
-                last_name,
-                birthdate,
-                email_adapter,
-                stop_before_about_you_submission=True,
-                otp_wait_timeout=register_otp_wait_seconds,
-                otp_resend_wait_timeout=register_otp_resend_wait_seconds,
-            )
+            _REG_RETRY_MARKERS = ("访问首页失败", "预授权被拦截")
+            registered = False
+            registration_message = ""
+            for _reg_attempt in range(3):
+                if _reg_attempt > 0:
+                    self._log(
+                        f"注册状态机重试 {_reg_attempt}/2（原因: {registration_message}）..."
+                    )
+                register_client = self._build_chatgpt_client()
+                self._log("2. 执行注册状态机（interrupt 模式：不在注册阶段提交 about_you）...")
+                registered, registration_message = register_client.register_complete_flow(
+                    result.email,
+                    self.password,
+                    first_name,
+                    last_name,
+                    birthdate,
+                    email_adapter,
+                    stop_before_about_you_submission=True,
+                    otp_wait_timeout=register_otp_wait_seconds,
+                    otp_resend_wait_timeout=register_otp_resend_wait_seconds,
+                )
+                if registered:
+                    break
+                if not any(m in registration_message for m in _REG_RETRY_MARKERS):
+                    break
 
             if not registered:
                 if not self._should_switch_to_login_after_register_failure(
@@ -531,8 +610,25 @@ class RefreshTokenRegistrationEngine:
 
             if not tokens:
                 last_error = oauth_client.last_error or "OAuth 登录状态机失败"
-                result.error_message = last_error
-                return result
+                if "add_phone" in last_error:
+                    self._log(
+                        "OAuth add_phone 阻断，启动并行 OAuth 重试（3 路并发）...",
+                        "warning",
+                    )
+                    tokens, oauth_client = self._parallel_add_phone_retry(
+                        result=result,
+                        register_client=register_client,
+                        email_adapter=email_adapter,
+                        first_name=first_name,
+                        last_name=last_name,
+                        birthdate=birthdate,
+                        register_otp_wait_seconds=register_otp_wait_seconds,
+                    )
+                    if not tokens:
+                        last_error = (oauth_client.last_error if oauth_client else None) or last_error
+                if not tokens:
+                    result.error_message = last_error
+                    return result
 
             self._populate_result_from_tokens(
                 result=result,

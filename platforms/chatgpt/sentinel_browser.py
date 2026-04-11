@@ -270,7 +270,7 @@ def _get_sentinel_token_via_quickjs(
             separators=(",", ":"),
             ensure_ascii=False,
         )
-        logger("Sentinel QuickJS 成功: p=✓ t=✓ c=✓")
+        logger("Sentinel QuickJS 成功: p=OK t=OK c=OK")
         return token
     except Exception as e:
         logger(f"Sentinel QuickJS 异常: {e}")
@@ -350,7 +350,7 @@ def get_sentinel_token_via_browser(
                             {
                                 "name": "oai-did",
                                 "value": str(device_id),
-                                "url": "https://auth.openai.com/",
+                                "domain": "auth.openai.com",
                                 "path": "/",
                                 "secure": True,
                                 "sameSite": "Lax",
@@ -401,9 +401,9 @@ def get_sentinel_token_via_browser(
                 parsed = json.loads(token)
                 logger(
                     "Sentinel Browser 成功: "
-                    f"p={'✓' if parsed.get('p') else '✗'} "
-                    f"t={'✓' if parsed.get('t') else '✗'} "
-                    f"c={'✓' if parsed.get('c') else '✗'}"
+                    f"p={'OK' if parsed.get('p') else 'X'} "
+                    f"t={'OK' if parsed.get('t') else 'X'} "
+                    f"c={'OK' if parsed.get('c') else 'X'}"
                 )
             except Exception:
                 logger(f"Sentinel Browser 成功: len={len(token)}")

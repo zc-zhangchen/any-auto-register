@@ -19,6 +19,19 @@ def _is_config_enabled(value: Any, default: bool = False) -> bool:
     return normalized in {"1", "true", "yes", "on", "enabled"}
 
 
+def _pick_text(source: Any, *keys: str, default: str = "") -> str:
+    if not isinstance(source, dict):
+        return default
+    for key in keys:
+        value = source.get(key)
+        if value is None:
+            continue
+        text = value.strip() if isinstance(value, str) else str(value).strip()
+        if text:
+            return text
+    return default
+
+
 def sync_account(account) -> list[dict[str, Any]]:
     """根据平台将账号同步到外部系统。"""
     from core.config_store import config_store
@@ -33,11 +46,11 @@ def sync_account(account) -> list[dict[str, Any]]:
         a = _A()
         a.email = account.email
         extra = _get_account_extra(account)
-        a.access_token = extra.get("access_token") or account.token
-        a.refresh_token = extra.get("refresh_token", "")
-        a.id_token = extra.get("id_token", "")
-        a.session_token = extra.get("session_token", "")
-        a.client_id = extra.get("client_id", "app_EMoamEEZ73f0CkXaXp7hrann")
+        a.access_token = _pick_text(extra, "access_token", "accessToken") or account.token
+        a.refresh_token = _pick_text(extra, "refresh_token", "refreshToken")
+        a.id_token = _pick_text(extra, "id_token", "idToken")
+        a.session_token = _pick_text(extra, "session_token", "sessionToken")
+        a.client_id = _pick_text(extra, "client_id", "clientId", default="app_EMoamEEZ73f0CkXaXp7hrann")
         return a
 
     if platform == "chatgpt":
@@ -46,22 +59,108 @@ def sync_account(account) -> list[dict[str, Any]]:
         # 贡献模式优先级最高：开启后仅上传到贡献服务器，避免重复上报到其它平台。
         contribution_enabled = _is_config_enabled(config_store.get("contribution_enabled", "0"))
         if contribution_enabled:
-            contribution_url = str(config_store.get("contribution_server_url", "") or "").strip()
-            contribution_key = str(config_store.get("contribution_key", "") or "").strip()
-            if not contribution_url:
-                msg = "Contribution 服务器地址未配置"
-                persist_cpa_sync_result(account, False, msg)
-                results.append({"name": "Contribution", "ok": False, "msg": msg})
-                return results
+            contribution_mode = str(config_store.get("contribution_mode", "codex") or "codex").strip().lower()
 
-            ok, msg = upload_chatgpt_account_to_cpa(
-                account,
-                api_url=contribution_url,
-                api_key=contribution_key or None,
-            )
-            persist_cpa_sync_result(account, ok, msg)
-            results.append({"name": "Contribution", "ok": ok, "msg": msg})
-            return results
+            if contribution_mode == "custom":
+                # 自定义贡献系统模式
+                custom_url = str(config_store.get("custom_contribution_url", "") or "").strip()
+                custom_token = str(config_store.get("custom_contribution_token", "") or "").strip()
+                if not custom_url:
+                    msg = "自定义贡献服务器地址未配置"
+                    persist_cpa_sync_result(account, False, msg)
+                    results.append({"name": "CustomContribution", "ok": False, "msg": msg})
+                    return results
+                if not custom_token:
+                    msg = "自定义贡献系统 token 未配置（请先绑定邮箱）"
+                    persist_cpa_sync_result(account, False, msg)
+                    results.append({"name": "CustomContribution", "ok": False, "msg": msg})
+                    return results
+
+                try:
+                    import requests
+                    from platforms.chatgpt.cpa_upload import generate_token_json
+
+                    # 生成完整的 token JSON
+                    extra = _get_account_extra(account)
+                    token_json = generate_token_json(account)
+
+                    # 如果 token_json 中没有 refresh_token，从 extra 获取
+                    if not token_json.get("refresh_token"):
+                        refresh_token = _pick_text(extra, "refresh_token", "refreshToken")
+                        print(f"[DEBUG] extra keys: {list(extra.keys())}")
+                        print(f"[DEBUG] refresh_token from extra: {refresh_token[:20] if refresh_token else 'EMPTY'}")
+                        if refresh_token:
+                            token_json["refresh_token"] = refresh_token
+                    if not token_json.get("access_token"):
+                        access_token = _pick_text(extra, "access_token", "accessToken") or getattr(account, "token", "")
+                        if access_token:
+                            token_json["access_token"] = access_token
+                    if not token_json.get("id_token"):
+                        id_token = _pick_text(extra, "id_token", "idToken")
+                        if id_token:
+                            token_json["id_token"] = id_token
+                    if not token_json.get("client_id"):
+                        client_id = _pick_text(extra, "client_id", "clientId")
+                        if client_id:
+                            token_json["client_id"] = client_id
+
+                    refresh_token = str(token_json.get("refresh_token") or "").strip()
+                    access_token = str(token_json.get("access_token") or "").strip()
+
+                    # 验证必须有 refresh_token
+                    print(f"[DEBUG] Final token_json keys: {list(token_json.keys())}")
+                    print(f"[DEBUG] Final refresh_token: {refresh_token[:20] if refresh_token else 'EMPTY'}")
+                    if not refresh_token:
+                        msg = "账号缺少 refresh_token"
+                        persist_cpa_sync_result(account, False, msg)
+                        results.append({"name": "CustomContribution", "ok": False, "msg": msg})
+                        return results
+
+                    resp = requests.post(
+                        f"{custom_url.rstrip('/')}/api/upload",
+                        json={
+                            "email": account.email,
+                            "refresh_token": refresh_token,
+                            "access_token": access_token,
+                            "token_json": token_json,
+                        },
+                        headers={"Authorization": f"Bearer {custom_token}"},
+                        timeout=15,
+                    )
+                    data = resp.json()
+                    if resp.status_code >= 400:
+                        msg = data.get("error") or data.get("message") or str(data)
+                        persist_cpa_sync_result(account, False, msg)
+                        results.append({"name": "CustomContribution", "ok": False, "msg": msg})
+                        return results
+
+                    msg = f"上传成功: {data.get('message', '')}"
+                    persist_cpa_sync_result(account, True, msg)
+                    results.append({"name": "CustomContribution", "ok": True, "msg": msg})
+                    return results
+                except Exception as exc:
+                    msg = f"上传到自定义贡献系统失败: {exc}"
+                    persist_cpa_sync_result(account, False, msg)
+                    results.append({"name": "CustomContribution", "ok": False, "msg": msg})
+                    return results
+            else:
+                # codex2api 模式（原有逻辑）
+                contribution_url = str(config_store.get("contribution_server_url", "") or "").strip()
+                contribution_key = str(config_store.get("contribution_key", "") or "").strip()
+                if not contribution_url:
+                    msg = "Contribution 服务器地址未配置"
+                    persist_cpa_sync_result(account, False, msg)
+                    results.append({"name": "Contribution", "ok": False, "msg": msg})
+                    return results
+
+                ok, msg = upload_chatgpt_account_to_cpa(
+                    account,
+                    api_url=contribution_url,
+                    api_key=contribution_key or None,
+                )
+                persist_cpa_sync_result(account, ok, msg)
+                results.append({"name": "Contribution", "ok": ok, "msg": msg})
+                return results
 
         cpa_url = str(config_store.get("cpa_api_url", "") or "").strip()
         cpa_enabled = _is_config_enabled(
@@ -82,8 +181,8 @@ def sync_account(account) -> list[dict[str, Any]]:
                 pass
 
             cp = _CP()
-            cp.access_token = extra.get("access_token") or account.token
-            cp.refresh_token = extra.get("refresh_token", "")
+            cp.access_token = _pick_text(extra, "access_token", "accessToken") or account.token
+            cp.refresh_token = _pick_text(extra, "refresh_token", "refreshToken")
 
             if upload_type == "rt":
                 from platforms.chatgpt.cpa_upload import upload_to_codex_proxy

@@ -781,17 +781,19 @@ class OAuthClient:
         self._log("步骤2: POST /api/accounts/authorize/continue")
 
         self._log(f"authorize_continue: device_id={device_id}")
-        sentinel_token = get_sentinel_token_via_browser(
-            flow="authorize_continue",
-            proxy=self.proxy,
-            page_url=continue_referer or f"{self.oauth_issuer}/log-in",
-            headless=self.browser_mode != "headed",
-            device_id=device_id,
-            log_fn=lambda msg: self._log(f"authorize_continue: {msg}"),
-        )
-        if sentinel_token:
-            self._log("authorize_continue: 已通过 Playwright SentinelSDK 获取 token")
-        else:
+        sentinel_token = None
+        for _sentinel_attempt in range(2):
+            sentinel_token = get_sentinel_token_via_browser(
+                flow="authorize_continue",
+                proxy=self.proxy,
+                page_url=continue_referer or f"{self.oauth_issuer}/log-in",
+                headless=self.browser_mode != "headed",
+                device_id=device_id,
+                log_fn=lambda msg: self._log(f"authorize_continue: {msg}"),
+            )
+            if sentinel_token:
+                self._log("authorize_continue: 已通过 Playwright SentinelSDK 获取 token")
+                break
             sentinel_token = build_sentinel_token(
                 self.session,
                 device_id,
@@ -802,9 +804,12 @@ class OAuthClient:
             )
             if sentinel_token:
                 self._log("authorize_continue: 已通过 HTTP PoW 获取 token")
-            else:
-                self._set_error("无法获取 sentinel token (authorize_continue)")
-                return None
+                break
+            if _sentinel_attempt == 0:
+                self._log("authorize_continue: sentinel token 获取失败，重试一次...")
+        if not sentinel_token:
+            self._set_error("无法获取 sentinel token (authorize_continue)")
+            return None
 
         request_url = f"{self.oauth_issuer}/api/accounts/authorize/continue"
         headers = self._headers(
@@ -1324,7 +1329,7 @@ class OAuthClient:
                     code, code_verifier, user_agent, impersonate
                 )
                 if tokens:
-                    self._log("✅ OAuth 注册成功")
+                    self._log("[OK] OAuth 注册成功")
                 else:
                     self._log("换取 tokens 失败")
                 return tokens
@@ -1439,7 +1444,7 @@ class OAuthClient:
                         code, code_verifier, user_agent, impersonate
                     )
                     if tokens:
-                        self._log("✅ OAuth 注册成功")
+                        self._log("[OK] OAuth 注册成功")
                     else:
                         self._log("换取 tokens 失败")
                     return tokens
@@ -1471,7 +1476,7 @@ class OAuthClient:
                         code, code_verifier, user_agent, impersonate
                     )
                     if tokens:
-                        self._log("✅ OAuth 注册成功")
+                        self._log("[OK] OAuth 注册成功")
                     else:
                         self._log("换取 tokens 失败")
                     return tokens
@@ -1809,7 +1814,7 @@ class OAuthClient:
                     code, code_verifier, user_agent, impersonate
                 )
                 if tokens:
-                    self._log("✅ OAuth 登录成功")
+                    self._log("[OK] OAuth 登录成功")
                 else:
                     self._log("换取 tokens 失败")
                 return tokens
@@ -1899,7 +1904,7 @@ class OAuthClient:
                         code, code_verifier, user_agent, impersonate
                     )
                     if tokens:
-                        self._log("✅ OAuth 登录成功")
+                        self._log("[OK] OAuth 登录成功")
                     else:
                         self._log("换取 tokens 失败")
                     return tokens
@@ -1986,7 +1991,7 @@ class OAuthClient:
                             code, code_verifier, user_agent, impersonate
                         )
                         if tokens:
-                            self._log("✅ OAuth 登录成功")
+                            self._log("[OK] OAuth 登录成功")
                         else:
                             self._log("换取 tokens 失败")
                         return tokens
@@ -2065,7 +2070,7 @@ class OAuthClient:
                         code, code_verifier, user_agent, impersonate
                     )
                     if tokens:
-                        self._log("✅ OAuth 登录成功")
+                        self._log("[OK] OAuth 登录成功")
                     else:
                         self._log("换取 tokens 失败")
                     return tokens
@@ -2099,7 +2104,7 @@ class OAuthClient:
                         code, code_verifier, user_agent, impersonate
                     )
                     if tokens:
-                        self._log("✅ OAuth 登录成功")
+                        self._log("[OK] OAuth 登录成功")
                     else:
                         self._log("换取 tokens 失败")
                     return tokens
@@ -3076,7 +3081,7 @@ class OAuthClient:
         if not hasattr(skymail_client, "_used_codes"):
             skymail_client._used_codes = set()
 
-        tried_codes = set(getattr(skymail_client, "_used_codes", set()))
+        tried_codes = set()
         try:
             otp_wait_seconds = int(
                 self.config.get(
@@ -3106,9 +3111,9 @@ class OAuthClient:
         otp_resend_wait_seconds = max(30, min(otp_resend_wait_seconds, 3600))
         otp_deadline = time.time() + otp_wait_seconds
         otp_sent_at = _otp_sent_at_baseline
-        next_resend_at = time.time() + otp_resend_wait_seconds
         self._log(
-            f"OAuth OTP 等待窗口: total={otp_wait_seconds}s, poll_window={otp_poll_window}s"
+            f"OAuth OTP 等待窗口: total={otp_wait_seconds}s, poll_window={otp_poll_window}s, "
+            f"每轮最多 5 次无响应后重发，最多 3 轮"
         )
 
         def validate_otp(code):
@@ -3232,6 +3237,10 @@ class OAuthClient:
 
         if hasattr(skymail_client, "wait_for_verification_code"):
             self._log("使用 wait_for_verification_code 进行阻塞式获取新验证码...")
+            no_new_count = 0
+            resend_round = 0
+            _max_no_new = 5
+            _max_resend_rounds = 3
             while time.time() < otp_deadline:
                 remaining = max(1, int(otp_deadline - time.time()))
                 wait_time = min(otp_poll_window, remaining)
@@ -3253,16 +3262,25 @@ class OAuthClient:
                     code = None
 
                 if not code:
-                    if time.time() >= next_resend_at and not self.last_error:
-                        self._log(
-                            f"暂未收到 OTP，触发重发（间隔 {otp_resend_wait_seconds}s）"
-                        )
-                        if _resend_email_otp():
-                            otp_sent_at = time.time()
-                            next_resend_at = otp_sent_at + otp_resend_wait_seconds
+                    no_new_count += 1
+                    self._log(
+                        f"暂未收到新的 OTP，继续等待... (本轮第 {no_new_count}/{_max_no_new} 次)"
+                    )
+                    if no_new_count >= _max_no_new:
+                        if resend_round < _max_resend_rounds:
+                            resend_round += 1
+                            self._log(
+                                f"连续 {_max_no_new} 次未收到新 OTP，"
+                                f"触发第 {resend_round}/{_max_resend_rounds} 轮重发..."
+                            )
+                            if _resend_email_otp():
+                                otp_sent_at = time.time()
+                            no_new_count = 0
                         else:
-                            next_resend_at = time.time() + otp_resend_wait_seconds
-                    self._log("暂未收到新的 OTP，继续等待...")
+                            self._log(
+                                f"已完成 {_max_resend_rounds} 轮重发仍未收到 OTP，放弃等待"
+                            )
+                            break
                     if self.last_error:
                         break
                     continue
@@ -3271,6 +3289,7 @@ class OAuthClient:
                     self._log(f"跳过已尝试验证码: {code}")
                     continue
 
+                no_new_count = 0
                 next_state = validate_otp(code)
                 if next_state:
                     return next_state

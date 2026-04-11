@@ -18,6 +18,10 @@ class ProxyBulkCreate(BaseModel):
     region: str = ""
 
 
+class ProxyBatchDelete(BaseModel):
+    ids: list[int]
+
+
 @router.get("")
 def list_proxies(session: Session = Depends(get_session)):
     items = session.exec(select(ProxyModel)).all()
@@ -59,6 +63,27 @@ def delete_proxy(proxy_id: int, session: Session = Depends(get_session)):
     session.delete(p)
     session.commit()
     return {"ok": True}
+
+
+@router.post("/batch-delete")
+def batch_delete_proxies(body: ProxyBatchDelete, session: Session = Depends(get_session)):
+    if not body.ids:
+        raise HTTPException(400, "代理 ID 列表不能为空")
+    ids = list(dict.fromkeys(int(i) for i in body.ids))
+    if len(ids) > 1000:
+        raise HTTPException(400, "单次最多删除 1000 条代理")
+
+    proxies = session.exec(select(ProxyModel).where(ProxyModel.id.in_(ids))).all()
+    found_ids = {p.id for p in proxies if p.id is not None}
+    for p in proxies:
+        session.delete(p)
+    session.commit()
+
+    return {
+        "deleted": len(found_ids),
+        "not_found": [pid for pid in ids if pid not in found_ids],
+        "total_requested": len(ids),
+    }
 
 
 @router.patch("/{proxy_id}/toggle")

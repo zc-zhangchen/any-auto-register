@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Card, Table, Button, Input, Tag, Space, Popconfirm, message } from 'antd'
+import { useEffect, useState, type Key } from 'react'
+import { Card, Table, Button, Input, Tag, Space, Popconfirm, message, Modal } from 'antd'
 import {
   PlusOutlined,
   DeleteOutlined,
@@ -17,6 +17,7 @@ export default function Proxies() {
   const [region, setRegion] = useState('')
   const [checking, setChecking] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([])
 
   const load = async () => {
     setLoading(true)
@@ -57,9 +58,47 @@ export default function Proxies() {
   }
 
   const del = async (id: number) => {
-    await apiFetch(`/proxies/${id}`, { method: 'DELETE' })
-    message.success('删除成功')
-    load()
+    try {
+      await apiFetch(`/proxies/${id}`, { method: 'DELETE' })
+      message.success('删除成功')
+      setSelectedRowKeys((prev) => prev.filter((key) => key !== id))
+      load()
+    } catch (e: any) {
+      message.error(`删除失败: ${e.message || '未知错误'}`)
+    }
+  }
+
+  const batchDel = async () => {
+    if (selectedRowKeys.length === 0) return
+    const ids = selectedRowKeys.map((key) => Number(key)).filter((v) => Number.isFinite(v))
+    try {
+      const result = await apiFetch('/proxies/batch-delete', {
+        method: 'POST',
+        body: JSON.stringify({ ids }),
+      }) as { deleted: number; not_found?: number[]; total_requested?: number }
+      setSelectedRowKeys([])
+      load()
+
+      const notFound = (result.not_found || []) as number[]
+      Modal.success({
+        title: '批量删除结果',
+        okText: '知道了',
+        content: (
+          <div>
+            <div>请求删除：{result.total_requested ?? ids.length} 条</div>
+            <div>成功删除：{result.deleted ?? 0} 条</div>
+            <div>未找到：{notFound.length} 条</div>
+            {notFound.length > 0 && (
+              <div style={{ marginTop: 8, maxHeight: 120, overflow: 'auto', fontFamily: 'monospace' }}>
+                {notFound.join(', ')}
+              </div>
+            )}
+          </div>
+        ),
+      })
+    } catch (e: any) {
+      message.error(`批量删除失败: ${e.message || '未知错误'}`)
+    }
   }
 
   const toggle = async (id: number) => {
@@ -121,7 +160,13 @@ export default function Proxies() {
             icon={record.is_active ? <SwapLeftOutlined /> : <SwapRightOutlined />}
             onClick={() => toggle(record.id)}
           />
-          <Popconfirm title="确认删除？" onConfirm={() => del(record.id)}>
+          <Popconfirm
+            title="确认删除该代理吗？"
+            onConfirm={() => del(record.id)}
+            okText="删除"
+            cancelText="取消"
+            okButtonProps={{ danger: true }}
+          >
             <Button type="text" size="small" danger icon={<DeleteOutlined />} />
           </Popconfirm>
         </Space>
@@ -165,11 +210,32 @@ export default function Proxies() {
       </Card>
 
       <Card>
+        <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between' }}>
+          <div style={{ color: '#7a8ba3' }}>
+            已选中 {selectedRowKeys.length} 条
+          </div>
+          <Popconfirm
+            title={`确认删除选中的 ${selectedRowKeys.length} 条代理？`}
+            onConfirm={batchDel}
+            okText="删除"
+            cancelText="取消"
+            okButtonProps={{ danger: true }}
+            disabled={selectedRowKeys.length === 0}
+          >
+            <Button danger icon={<DeleteOutlined />} disabled={selectedRowKeys.length === 0}>
+              批量删除
+            </Button>
+          </Popconfirm>
+        </div>
         <Table
           rowKey="id"
           columns={columns}
           dataSource={proxies}
           loading={loading}
+          rowSelection={{
+            selectedRowKeys,
+            onChange: (keys) => setSelectedRowKeys(keys),
+          }}
           pagination={false}
         />
       </Card>

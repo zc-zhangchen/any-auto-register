@@ -134,7 +134,7 @@ class ChatGPTPluginTests(unittest.TestCase):
         _, kwargs = mailbox.wait_call
         self.assertEqual(kwargs.get("timeout"), 90)
 
-    def test_custom_provider_requeues_mailbox_account_on_failure(self):
+    def test_custom_provider_does_not_requeue_mailbox_account_on_failure(self):
         mailbox = _RequeueMailbox()
         platform = ChatGPTPlatform(
             config=RegisterConfig(extra={"chatgpt_registration_mode": "refresh_token"}),
@@ -148,7 +148,7 @@ class ChatGPTPluginTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 platform.register()
 
-        self.assertEqual(mailbox.requeued, [mailbox.account])
+        self.assertEqual(mailbox.requeued, [])
 
 
 if __name__ == "__main__":

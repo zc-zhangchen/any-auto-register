@@ -162,6 +162,34 @@ class OutlookMailboxOAuthTests(unittest.TestCase):
             str(mock_request.call_args.args[1]),
         )
 
+    @mock.patch("requests.get")
+    def test_wait_for_code_uses_mailapi_backend_for_mailapi_account(self, mock_get):
+        mailbox = OutlookMailbox()
+        account = MailboxAccount(
+            email="demo@outlook.com",
+            extra={
+                "account_type": "mailapi_url",
+                "mailapi_url": "https://mailapi.icu/key?type=html&orderNo=abc123",
+            },
+        )
+        mock_get.return_value = _FakeResponse(
+            200,
+            text="<html><body>Your OpenAI verification code is 246810</body></html>",
+        )
+
+        code = mailbox.wait_for_code(
+            account,
+            timeout=5,
+            before_ids=set(),
+        )
+
+        self.assertEqual(code, "246810")
+        self.assertTrue(mock_get.call_count >= 1)
+        self.assertEqual(
+            mock_get.call_args.kwargs.get("timeout"),
+            15,
+        )
+
     @mock.patch("requests.post")
     @mock.patch("requests.request")
     def test_wait_for_code_reads_deleteditems_folder_when_inbox_has_no_new_code(self, mock_request, mock_post):

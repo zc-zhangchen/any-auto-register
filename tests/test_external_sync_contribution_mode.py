@@ -71,6 +71,47 @@ class ExternalSyncContributionModeTests(unittest.TestCase):
         upload_mock.assert_not_called()
         persist_mock.assert_called_once()
 
+    def test_custom_contribution_upload_sends_token_json_and_top_level_tokens(self):
+        account = DummyAccount(
+            extra={
+                "refreshToken": "rt-camel-case",
+                "accessToken": "at-camel-case",
+                "idToken": "id-camel-case",
+                "clientId": "client-camel-case",
+            }
+        )
+        cfg = {
+            "contribution_enabled": "1",
+            "contribution_mode": "custom",
+            "custom_contribution_url": "http://custom.local:5000",
+            "custom_contribution_token": "custom-token",
+        }
+
+        response = mock.Mock()
+        response.status_code = 200
+        response.json.return_value = {"message": "queued"}
+
+        with mock.patch("core.config_store.config_store.get", side_effect=_config_getter(cfg)):
+            with mock.patch("platforms.chatgpt.cpa_upload.generate_token_json", return_value={"type": "codex", "email": account.email}):
+                with mock.patch("requests.post", return_value=response) as post_mock:
+                    with mock.patch("services.external_sync.persist_cpa_sync_result") as persist_mock:
+                        result = sync_account(account)
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["name"], "CustomContribution")
+        self.assertTrue(result[0]["ok"])
+        persist_mock.assert_called_once_with(account, True, "上传成功: queued")
+        post_mock.assert_called_once()
+
+        payload = post_mock.call_args.kwargs["json"]
+        self.assertEqual(payload["email"], account.email)
+        self.assertEqual(payload["refresh_token"], "rt-camel-case")
+        self.assertEqual(payload["access_token"], "at-camel-case")
+        self.assertEqual(payload["token_json"]["refresh_token"], "rt-camel-case")
+        self.assertEqual(payload["token_json"]["access_token"], "at-camel-case")
+        self.assertEqual(payload["token_json"]["id_token"], "id-camel-case")
+        self.assertEqual(payload["token_json"]["client_id"], "client-camel-case")
+
     def test_contribution_disabled_keeps_existing_cpa_sync(self):
         account = DummyAccount()
         cfg = {

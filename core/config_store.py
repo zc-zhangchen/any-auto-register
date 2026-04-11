@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """全局配置持久化 - 存储在 SQLite，并在缺省时回退到环境变量/.env。"""
 import os
 import re
