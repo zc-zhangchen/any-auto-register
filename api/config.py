@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+
 from core.config_store import config_store
 from services.mail_imports import MailImportExecuteRequest, MailImportSnapshotRequest, mail_import_registry
 
@@ -49,10 +50,18 @@ CONFIG_KEYS = [
     "applemail_mailboxes",
     "gptmail_base_url",
     "gptmail_api_key",
+    "gptmail_mode",
     "gptmail_domain",
     "opentrashmail_api_url",
     "opentrashmail_domain",
     "opentrashmail_password",
+    "cfrouting_domain",
+    "cfrouting_imap_server",
+    "cfrouting_imap_port",
+    "cfrouting_username",
+    "cfrouting_password",
+    "cfrouting_mailboxes",
+    "cfrouting_poll_interval_seconds",
     "cfworker_api_url",
     "cfworker_admin_token",
     "cfworker_custom_auth",
@@ -134,8 +143,14 @@ def get_config():
         all_cfg["applemail_mailboxes"] = "INBOX,Junk"
     if not all_cfg.get("outlook_backend"):
         all_cfg["outlook_backend"] = "graph"
+    if not all_cfg.get("cfrouting_imap_port"):
+        all_cfg["cfrouting_imap_port"] = "993"
+    if not all_cfg.get("cfrouting_mailboxes"):
+        all_cfg["cfrouting_mailboxes"] = "INBOX"
     if not all_cfg.get("gptmail_base_url"):
         all_cfg["gptmail_base_url"] = "https://mail.chatgpt.org.uk"
+    if not all_cfg.get("gptmail_mode"):
+        all_cfg["gptmail_mode"] = "api"
     if not all_cfg.get("luckmail_base_url"):
         all_cfg["luckmail_base_url"] = "https://mails.luckyous.com/"
     if not str(all_cfg.get("contribution_enabled", "") or "").strip():

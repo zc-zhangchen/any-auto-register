@@ -4,11 +4,11 @@ FROM node:20-bookworm-slim AS frontend-builder
 
 WORKDIR /app/frontend
 
-COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
+COPY frontend/package.json frontend/pnpm-lock.yaml ./
+RUN corepack enable && pnpm install --frozen-lockfile
 
 COPY frontend/ ./
-RUN npm run build
+RUN pnpm build
 
 
 FROM python:3.12-slim AS runtime
@@ -18,7 +18,6 @@ ARG CAMOUFOX_RELEASE=beta.24
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
     HOST=0.0.0.0 \
     PORT=8000 \
     APP_CONDA_ENV=docker \
@@ -32,7 +31,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY requirements.txt ./
+COPY pyproject.toml uv.lock ./
 COPY scripts/install_camoufox.py /tmp/install_camoufox.py
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -42,10 +41,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && curl -LsSf https://astral.sh/uv/install.sh | sh \
     && rm -rf /var/lib/apt/lists/*
 
-ENV PATH="/usr/local/go/bin:/root/.local/bin:${PATH}"
+ENV PATH="/app/.venv/bin:/usr/local/go/bin:/root/.local/bin:${PATH}"
 
-RUN pip install --upgrade pip \
-    && pip install -r requirements.txt \
+RUN uv sync --frozen --no-dev --no-install-project \
     && installed=0 \
     && for attempt in 1 2 3; do \
          if python -m playwright install --with-deps chromium firefox; then \

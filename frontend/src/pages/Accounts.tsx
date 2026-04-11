@@ -745,6 +745,7 @@ export default function Accounts() {
         laoudo_account_id: cfg.laoudo_account_id,
         gptmail_base_url: cfg.gptmail_base_url,
         gptmail_api_key: cfg.gptmail_api_key,
+        gptmail_mode: cfg.gptmail_mode || 'api',
         gptmail_domain: cfg.gptmail_domain,
         maliapi_base_url: cfg.maliapi_base_url,
         maliapi_api_key: cfg.maliapi_api_key,
