@@ -112,6 +112,7 @@ CONFIG_KEYS = [
     "ddg_daily_limit",
     "mailtm_keys_config",
     "mailtm_daily_limit",
+    "tmailor_api_key",
     "contribution_enabled",
     "contribution_server_url",
     "contribution_key",

@@ -219,6 +219,13 @@ const TAB_ITEMS = [
         ],
       },
       {
+        title: 'Tmailor',
+        desc: '基于 tmailor.com 的临时邮箱服务，使用 curl_cffi 绕过 Cloudflare 保护，无需配置即可使用',
+        fields: [
+          { key: 'tmailor_api_key', label: 'API Key（可选）', secret: true, placeholder: '留空则匿名使用' },
+        ],
+      },
+      {
         title: 'TempMail.lol',
         desc: '自动生成邮箱，无需配置，需要代理访问（CN IP 被封）',
         fields: [],
@@ -257,6 +264,13 @@ const TAB_ITEMS = [
           { key: 'luckmail_api_key', label: 'API Key', secret: true },
           { key: 'luckmail_email_type', label: '邮箱类型（可选）', type: 'select' },
           { key: 'luckmail_domain', label: '邮箱域名（可选）', placeholder: 'outlook.com / gmail.com' },
+        ],
+      },
+      {
+        title: 'DuckDuckGo (DDG) Keys 配置',
+        desc: 'DDG 邮箱服务的 API Keys 配置',
+        fields: [
+          { key: 'ddg_keys', label: 'DDG Keys', type: 'array', placeholder: '输入 DDG Keys，每行一个' },
         ],
       },
 
@@ -2105,7 +2119,7 @@ export default function Settings() {
       </div>
 
       <div style={{ display: 'flex', gap: 24 }}>
-        <div style={{ width: 200 }}>
+        <div style={{ width: 200, position: 'sticky', top: 24, alignSelf: 'flex-start', maxHeight: 'calc(100vh - 120px)', overflowY: 'auto' }}>
           <Tabs
             tabPosition="left"
             activeKey={activeTab}
@@ -2122,7 +2136,7 @@ export default function Settings() {
           />
         </div>
 
-        <div ref={contentPaneRef} style={{ flex: 1 }}>
+        <div ref={contentPaneRef} style={{ flex: 1, overflowY: 'auto' }}>
           {activeTab === 'integrations' ? (
             <IntegrationsPanel />
           ) : activeTab === 'security' ? (
@@ -2136,7 +2150,6 @@ export default function Settings() {
                   {activeTab === 'captcha' ? <SolverStatus /> : null}
                   {activeTab === 'mailbox' ? (
                     <>
-                      <DDGKeysConfigSection form={form} onSave={save} saving={saving} saved={saved} />
                       {mailboxSections.defaultSection ? (
                         <ConfigSection key={mailboxSections.defaultSection.title} section={mailboxSections.defaultSection} />
                       ) : null}
@@ -2149,6 +2162,7 @@ export default function Settings() {
                         <ConfigSection key={section.title} section={section} />
                       ))}
                       {currentMailProviderRaw !== 'cfworker' ? <CFWorkerDomainPoolSection form={form} /> : null}
+                      <DDGKeysConfigSection form={form} onSave={save} saving={saving} saved={saved} />
                     </>
                   ) : (
                     currentTab.sections.map((section) => (

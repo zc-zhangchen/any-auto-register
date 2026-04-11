@@ -20,7 +20,18 @@ from .proxy_utils import build_requests_proxy_config
 BASE_URL = "https://tmailor.com"
 API_URL = f"{BASE_URL}/api"
 
-TMALLOR_API_KEY = os.getenv("TMAILOR_API_KEY", "").strip()
+def _get_api_key() -> str:
+    try:
+        from .config_store import config_store
+        val = config_store.get("tmailor_api_key", "")
+        if val:
+            return val.strip()
+    except Exception:
+        pass
+    return os.getenv("TMAILOR_API_KEY", "").strip()
+
+
+TMALLOR_API_KEY = ""  # 运行时通过 _get_api_key() 动态读取
 
 _BLOCKED_POOL_FILE = "tmailor_blocked_pool.json"
 _blocked_pool_lock = threading.Lock()
@@ -98,14 +109,27 @@ class TmailorMailbox(BaseMailbox):
                 "Content-Type": "application/json",
                 "Origin": self.base_url,
                 "Referer": f"{self.base_url}/",
+                "Sec-Fetch-Dest": "empty",
+                "Sec-Fetch-Mode": "cors",
+                "Sec-Fetch-Site": "same-origin",
+                "sec-ch-ua": '"Chromium";v="136", "Google Chrome";v="136", "Not.A/Brand";v="99"',
+                "sec-ch-ua-mobile": "?0",
+                "sec-ch-ua-platform": '"Windows"',
             })
-            if TMALLOR_API_KEY:
-                self._session.headers["Authorization"] = f"Bearer {TMALLOR_API_KEY}"
+            api_key = _get_api_key()
+            if api_key:
+                self._session.headers["Authorization"] = f"Bearer {api_key}"
+            # 关键: 先访问首页,设置 cookies (包括 Cloudflare cf_clearance)
+            try:
+                self._session.get(self.base_url + "/", timeout=20)
+                self._log("[Tmailor] 已访问首页,设置 session cookies")
+            except Exception as e:
+                self._log(f"[Tmailor] 访问首页失败: {e}")
         return self._session
 
     def _create_mailbox(self) -> dict:
         session = self._get_session()
-        session.get(self.base_url + "/", timeout=20)
+        # 注意: _get_session() 已经访问过首页了,不需要重复访问
         r = session.post(self.api_url, json={
             "action": "newemail",
             "fbToken": None,
@@ -137,18 +161,56 @@ class TmailorMailbox(BaseMailbox):
     def _list_inbox(self, token: str, list_id: str = None) -> tuple[str | None, list[dict]]:
         session = self._get_session()
         headers = {"listid": list_id} if list_id else {}
-        r = session.post(self.api_url, json={
+        payload = {
             "action": "listinbox",
             "accesstoken": token,
             "curentToken": token,
             "fbToken": None,
-        }, headers=headers, timeout=20)
+        }
+        self._log(f"[Tmailor] 请求参数: action=listinbox, has_listid={bool(list_id)}")
+        r = session.post(self.api_url, json=payload, headers=headers, timeout=20)
         data = r.json()
+        self._log(f"[Tmailor] API 完整响应: {data}")
         if data.get("msg") == "ok":
             new_list_id = data.get("code") or list_id
             messages = data.get("data") or {}
+            if messages:
+                self._log(f"[Tmailor] 邮件 IDs: {list(messages.keys())[:5]}...")
             return new_list_id, list(messages.values())
         return list_id, []
+
+    def _is_openai_mail(self, msg: dict, detail: dict = None) -> bool:
+        """判断是否为 OpenAI/ChatGPT 邮件"""
+        subject = str((detail or {}).get("subject") or msg.get("subject") or "").lower()
+        text = str((detail or {}).get("text") or msg.get("text") or "").lower()
+        body = str((detail or {}).get("body") or msg.get("body") or "").lower()
+        from_addr = str(msg.get("from") or "").lower()
+
+        combined = f"{subject} {text} {body} {from_addr}"
+        return (
+            "openai" in from_addr or "openai" in combined or
+            "chatgpt" in subject or "verify" in subject or
+            "verification" in subject or "code" in subject
+        )
+
+    def _extract_code_from_mail(self, msg: dict, detail: dict = None, code_pattern: str = None) -> str | None:
+        """从邮件中提取验证码"""
+        for key in ("verification_code", "code", "otp"):
+            value = str((detail or {}).get(key) or msg.get(key) or "").strip()
+            if value and re.match(r"^\d{6}$", value):
+                return value
+
+        for text in [
+            str((detail or {}).get(k) or msg.get(k) or "")
+            for k in ("subject", "text", "body")
+        ]:
+            if not text:
+                continue
+            m = re.search(r"(?<!\d)(\d{6})(?!\d)", text)
+            if m:
+                return m.group(1)
+
+        return None
 
     def get_email(self) -> MailboxAccount:
         try:
@@ -171,6 +233,8 @@ class TmailorMailbox(BaseMailbox):
             return self.get_email()
 
         self._log(f"[Tmailor] 生成邮箱: {email}")
+        self._log(f"[Tmailor] Token: {token}")
+        self._log(f"[Tmailor] 访问方式: 打开 {self.base_url} 输入上面的 token")
         return MailboxAccount(
             email=email,
             account_id=token,
@@ -197,13 +261,18 @@ class TmailorMailbox(BaseMailbox):
         timeout: int = 120,
         before_ids: set = None,
         code_pattern: str = None,
+        otp_sent_at: float = None,
+        exclude_codes: set = None,
+        target_email: str = None,
         **kwargs,
     ) -> str:
         token = account.account_id
+        self._log(f"[Tmailor] wait_for_code 开始: email={account.email}, has_token={bool(token)}, token_len={len(str(token or ''))}")
         if not token:
             raise RuntimeError("Tmailor 缺少 token")
 
         seen = {str(mid) for mid in (before_ids or set())}
+        excluded = set(exclude_codes or set())
         list_id = None
         end = time.time() + timeout
 
@@ -211,29 +280,34 @@ class TmailorMailbox(BaseMailbox):
             self._checkpoint()
             list_id, messages = self._list_inbox(token, list_id)
 
+            self._log(f"[Tmailor] 轮询邮件: list_id={list_id}, 收到 {len(messages)} 封邮件")
+
             for msg in messages:
                 mid = str(msg.get("id") or "")
                 if mid in seen:
                     continue
                 seen.add(mid)
 
+                subject = msg.get("subject") or ""
+                self._log(f"[Tmailor] 检查邮件: id={mid[:20]}..., subject={subject}")
+
+                # 读取详情
                 detail = self._read_mail_detail(token, msg) or {}
-                text = " ".join(str(x) for x in [
-                    msg.get("subject"), msg.get("text"), msg.get("body"),
-                    detail.get("subject"), detail.get("text"), detail.get("body")
-                ] if x)
 
-                if keyword and keyword.lower() not in text.lower():
+                # 判断是否为 OpenAI 邮件
+                is_openai = self._is_openai_mail(msg, detail)
+                self._log(f"[Tmailor] 是否为 OpenAI 邮件: {is_openai}")
+                if not is_openai:
                     continue
 
-                m = re.search(r"(?<!\d)(\d{6})(?!\d)", text)
-                if not m:
+                # 提取验证码
+                code = self._extract_code_from_mail(msg, detail, code_pattern)
+                self._log(f"[Tmailor] 提取的验证码: {code}")
+                if not code:
                     continue
 
-                code = m.group(1)
-                subject = (detail.get("subject") or msg.get("subject") or "").strip()
-
-                if subject.lower() != f"your chatgpt code is {code}".lower():
+                if code in excluded:
+                    self._log(f"[Tmailor] 跳过已使用的验证码: {code}")
                     continue
 
                 self._log(f"[Tmailor] 收到验证码: {code}")

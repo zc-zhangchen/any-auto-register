@@ -150,6 +150,12 @@ function AppContent() {
           style={{
             background: currentTheme.token?.colorBgContainer,
             borderRight: `1px solid ${currentTheme.token?.colorBorder}`,
+            position: 'fixed',
+            left: 0,
+            top: 0,
+            bottom: 0,
+            zIndex: 100,
+            overflowY: 'auto',
           }}
           width={220}
         >
@@ -231,8 +237,10 @@ function AppContent() {
         <Content
           style={{
             padding: 24,
-            overflow: 'auto',
             background: currentTheme.token?.colorBgLayout,
+            marginLeft: collapsed ? 80 : 220,
+            height: '100vh',
+            overflow: 'hidden',
           }}
         >
           <Routes>
