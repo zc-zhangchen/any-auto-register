@@ -2,10 +2,11 @@
   "name": "frontend",
   "private": true,
   "version": "0.0.0",
+  "packageManager": "pnpm@10.14.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build --configLoader native",
     "lint": "eslint .",
     "preview": "vite preview"
   },

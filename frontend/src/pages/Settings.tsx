@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { App, Card, Form, Input, Select, Button, message, Tabs, Space, Tag, Typography, Modal, QRCode, Switch, Alert } from 'antd'
+import type { FormInstance } from 'antd'
 import {
   SaveOutlined,
   EyeOutlined,
@@ -35,13 +36,20 @@ const SELECT_FIELDS: Record<string, { label: string; value: string }[]> = {
     { label: 'YYDS Mail / MaliAPI', value: 'maliapi' },
     { label: 'GPTMail', value: 'gptmail' },
     { label: 'OpenTrashMail', value: 'opentrashmail' },
+    { label: 'Cloudflare 邮件路由（直转邮箱）', value: 'cfrouting' },
     { label: 'Freemail（自建 CF Worker）', value: 'freemail' },
     { label: 'CF Worker（自建域名）', value: 'cfworker' },
+    { label: 'DuckDuckGo（DDG 别名 + CF 收件）', value: 'ddg' },
+    { label: 'Tmailor（tmailor.com）', value: 'tmailor' },
   ],
   maliapi_auto_domain_strategy: [
     { label: 'balanced', value: 'balanced' },
     { label: 'prefer_owned', value: 'prefer_owned' },
     { label: 'prefer_public', value: 'prefer_public' },
+  ],
+  gptmail_mode: [
+    { label: 'API', value: 'api' },
+    { label: 'Automation', value: 'automation' },
   ],
   default_executor: [
     { label: 'API 协议（无浏览器）', value: 'protocol' },
@@ -113,6 +121,18 @@ const TAB_ITEMS = [
         ],
       },
       {
+        title: 'Cloudflare 邮件路由（直转邮箱）',
+        desc: '不走 Worker。仅随机生成你的域名别名，并直接轮询目标收件箱 IMAP；前提是你已在 Cloudflare 把该域名配置为 catch-all 或对应转发规则。常见目标邮箱可直接填 QQ 或 Gmail。',
+        fields: [
+          { key: 'cfrouting_domain', label: '路由域名', placeholder: 'example.com,mail.example.com' },
+          { key: 'cfrouting_imap_server', label: 'IMAP Server', placeholder: 'imap.qq.com / imap.gmail.com / outlook.office365.com' },
+          { key: 'cfrouting_imap_port', label: 'IMAP Port', placeholder: '993' },
+          { key: 'cfrouting_username', label: '目标邮箱用户名', placeholder: 'your@qq.com / your@gmail.com' },
+          { key: 'cfrouting_password', label: '目标邮箱密码 / 授权码 / App Password', secret: true },
+          { key: 'cfrouting_mailboxes', label: '轮询文件夹', placeholder: 'INBOX（QQ / Gmail 都先从这里试）' },
+        ],
+      },
+      {
         title: 'Freemail',
         desc: '基于 Cloudflare Worker 的自建邮箱，支持管理员令牌或账号密码认证',
         fields: [
@@ -181,10 +201,11 @@ const TAB_ITEMS = [
       },
       {
         title: 'GPTMail',
-        desc: '基于 GPTMail API 生成临时邮箱并轮询邮件；若已知本站可用域名，也可本地拼装随机地址',
+        desc: '支持 API Key 模式或网页端 automation 模式；若已知本站可用域名，也可本地拼装随机地址',
         fields: [
           { key: 'gptmail_base_url', label: 'API URL', placeholder: 'https://mail.chatgpt.org.uk' },
           { key: 'gptmail_api_key', label: 'API Key', secret: true, placeholder: 'gpt-test' },
+          { key: 'gptmail_mode', label: '生成模式', type: 'select' },
           { key: 'gptmail_domain', label: '邮箱域名（可选）', placeholder: 'example.com' },
         ],
       },
@@ -195,6 +216,13 @@ const TAB_ITEMS = [
           { key: 'opentrashmail_api_url', label: 'API URL', placeholder: 'http://mail.example.com:8085' },
           { key: 'opentrashmail_domain', label: '邮箱域名（可选）', placeholder: 'xiyoufm.com' },
           { key: 'opentrashmail_password', label: '站点密码（可选）', secret: true, placeholder: '启用 PASSWORD 时填写' },
+        ],
+      },
+      {
+        title: 'Tmailor',
+        desc: '基于 tmailor.com 的临时邮箱服务，使用 curl_cffi 绕过 Cloudflare 保护，无需配置即可使用',
+        fields: [
+          { key: 'tmailor_api_key', label: 'API Key（可选）', secret: true, placeholder: '留空则匿名使用' },
         ],
       },
       {
@@ -238,6 +266,14 @@ const TAB_ITEMS = [
           { key: 'luckmail_domain', label: '邮箱域名（可选）', placeholder: 'outlook.com / gmail.com' },
         ],
       },
+      {
+        title: 'DuckDuckGo (DDG) Keys 配置',
+        desc: 'DDG 邮箱服务的 API Keys 配置',
+        fields: [
+          { key: 'ddg_keys', label: 'DDG Keys', type: 'array', placeholder: '输入 DDG Keys，每行一个' },
+        ],
+      },
+
     ],
   },
   {
@@ -464,6 +500,53 @@ function splitMailboxSections(sections: SectionConfig[], mailProvider: string) {
   }
 }
 
+interface IntegrationServiceItem {
+  name: string
+  label: string
+  running: boolean
+  repo_exists: boolean
+  pid?: number | string | null
+  repo_path: string
+  url?: string
+  management_url?: string
+  management_key?: string
+  log_path: string
+  last_error?: string | null
+}
+
+type SettingsFormValues = Record<string, unknown>
+
+interface IntegrationServicesResponse {
+  items?: IntegrationServiceItem[]
+}
+
+interface BackfillResponse {
+  total: number
+  success: number
+}
+
+interface SolverStatusResponse {
+  running: boolean
+}
+
+interface AuthStatusResponse {
+  has_password: boolean
+  has_totp: boolean
+}
+
+interface AuthSetupResponse {
+  access_token: string
+}
+
+interface TotpSetupResponse {
+  secret: string
+  uri: string
+}
+
+async function fetchJson<T>(path: string, opts?: RequestInit): Promise<T> {
+  return apiFetch(path, opts) as Promise<T>
+}
+
 function formatResultText(data: unknown) {
   if (typeof data === 'string') return data
   try {
@@ -498,7 +581,9 @@ function parseStoredDomainList(value: unknown): string[] {
     if (Array.isArray(parsed)) {
       return normalizeDomainList(parsed)
     }
-  } catch {}
+  } catch {
+    void 0
+  }
 
   return normalizeDomainList(
     text
@@ -565,6 +650,15 @@ function formatDisplayPercent(value: number | null): string {
   return `${value.toFixed(2)}%`
 }
 
+function getErrorMessage(error: unknown, fallback: string): string {
+  const record = asRecord(error)
+  const message = pickString(record, ['message', 'detail', 'error'])
+  if (message) return message
+  if (error instanceof Error && error.message) return error.message
+  if (typeof error === 'string' && error.trim()) return error
+  return fallback
+}
+
 function ConfigField({ field }: { field: FieldConfig }) {
   const [showSecret, setShowSecret] = useState(false)
   const options = SELECT_FIELDS[field.key]
@@ -615,7 +709,7 @@ function ConfigSection({ section }: { section: SectionConfig }) {
   )
 }
 
-function CFWorkerDomainPoolSection({ form }: { form: any }) {
+function CFWorkerDomainPoolSection({ form }: { form: FormInstance<SettingsFormValues> }) {
   const watchedDomains = Form.useWatch('cfworker_domains', form) || []
   const watchedEnabledDomains = Form.useWatch('cfworker_enabled_domains', form) || []
   const normalizedDomains = normalizeDomainList(watchedDomains)
@@ -744,12 +838,66 @@ function CFWorkerDomainPoolSection({ form }: { form: any }) {
   )
 }
 
+function DDGKeysConfigSection({ form, onSave, saving, saved }: { form: any; onSave: () => void; saving: boolean; saved: boolean }) {
+  const mailProvider = form.getFieldValue('mail_provider')
+  if (mailProvider !== 'ddg') return null
+
+  return (
+    <Card
+      title="DuckDuckGo (DDG) Keys 配置"
+      extra={<span style={{ fontSize: 12, color: '#7a8ba3' }}>在这里添加多组 DDG Key，注册时将自动轮转使用</span>}
+      style={{ marginBottom: 16 }}
+    >
+      <Form.List name="ddg_keys_config">
+        {(fields, { add, remove }) => (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {fields.map((field, index) => (
+              <Card size="small" key={field.key} title={`Key ${index + 1}`} extra={<Button danger size="small" onClick={() => remove(field.name)}>删除</Button>}>
+                <Form.Item
+                  {...field}
+                  name={[field.name, 'label']}
+                  label="标识名"
+                  rules={[{ required: true, message: '请输入标识名' }]}
+                >
+                  <Input placeholder="例如: Key-1" />
+                </Form.Item>
+                <Form.Item
+                  {...field}
+                  name={[field.name, 'ddg_token']}
+                  label="DDG Token"
+                  rules={[{ required: true, message: '请输入 DDG Token' }]}
+                >
+                  <Input.Password placeholder="Bearer xxx（点击右侧小眼睛查看）" />
+                </Form.Item>
+                <Form.Item
+                  {...field}
+                  name={[field.name, 'mail_inbox_url']}
+                  label="CF 收件箱 URL"
+                  rules={[{ required: true, message: '请输入 CF 收件箱 URL' }]}
+                >
+                  <Input placeholder="https://..." />
+                </Form.Item>
+              </Card>
+            ))}
+            <Button type="dashed" onClick={() => add({ label: `Key-${fields.length + 1}`, ddg_token: '', mail_inbox_url: '' })} icon={<PlusOutlined />} block>
+              添加新 Key
+            </Button>
+            <Button type="primary" icon={<SaveOutlined />} onClick={onSave} loading={saving} block>
+              {saved ? '已保存 ✓' : '保存此配置'}
+            </Button>
+          </div>
+        )}
+      </Form.List>
+    </Card>
+  )
+}
+
 function SolverStatus() {
   const [running, setRunning] = useState<boolean | null>(null)
 
   const checkSolver = async () => {
     try {
-      const d = await apiFetch('/solver/status')
+      const d = await fetchJson<SolverStatusResponse>('/solver/status')
       setRunning(d.running)
     } catch {
       setRunning(false)
@@ -763,9 +911,14 @@ function SolverStatus() {
   }
 
   useEffect(() => {
-    checkSolver()
+    const kickoff = window.setTimeout(() => {
+      void checkSolver()
+    }, 0)
     const timer = window.setInterval(checkSolver, 5000)
-    return () => window.clearInterval(timer)
+    return () => {
+      window.clearTimeout(kickoff)
+      window.clearInterval(timer)
+    }
   }, [])
 
   return (
@@ -800,11 +953,10 @@ function SolverStatus() {
 }
 
 function IntegrationsPanel() {
-  const [items, setItems] = useState<any[]>([])
+  const [items, setItems] = useState<IntegrationServiceItem[]>([])
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState('')
   const [updateMode, setUpdateMode] = useState<'tag' | 'branch'>('tag')
-  const saved = false
   const [resultModal, setResultModal] = useState({
     open: false,
     title: '',
@@ -825,8 +977,8 @@ function IntegrationsPanel() {
     setLoading(true)
     try {
       const [d, cfg] = await Promise.all([
-        apiFetch('/integrations/services'),
-        apiFetch('/config'),
+        fetchJson<IntegrationServicesResponse>('/integrations/services'),
+        fetchJson<Record<string, unknown>>('/config'),
       ])
       setItems(d.items || [])
       const mode = String(cfg?.external_apps_update_mode || 'tag').trim().toLowerCase()
@@ -842,16 +994,17 @@ function IntegrationsPanel() {
     return () => window.clearInterval(timer)
   }, [])
 
-  const doAction = async (key: string, request: Promise<any>) => {
+  const doAction = async (key: string, request: Promise<unknown>) => {
     setBusy(key)
     try {
       const result = await request
       await load()
       message.success('操作完成')
       showResultModal('操作结果', result, true)
-    } catch (e: any) {
-      message.error(e?.message || '操作失败')
-      showResultModal('操作结果', e?.message || e || '操作失败', false)
+    } catch (error: unknown) {
+      const errorMessage = getErrorMessage(error, '操作失败')
+      message.error(errorMessage)
+      showResultModal('操作结果', errorMessage, false)
       await load()
     } finally {
       setBusy('')
@@ -861,15 +1014,16 @@ function IntegrationsPanel() {
   const backfill = async (platforms: string[], label: string, busyKey: string) => {
     setBusy(busyKey)
     try {
-      const d = await apiFetch('/integrations/backfill', {
+      const d = await fetchJson<BackfillResponse>('/integrations/backfill', {
         method: 'POST',
         body: JSON.stringify({ platforms }),
       })
       message.success(`${label} 回填完成：成功 ${d.success} / ${d.total}`)
       showResultModal(`${label} 回填结果`, d, true)
-    } catch (e: any) {
-      message.error(e?.message || `${label} 回填失败`)
-      showResultModal(`${label} 回填结果`, e?.message || e || `${label} 回填失败`, false)
+    } catch (error: unknown) {
+      const errorMessage = getErrorMessage(error, `${label} 回填失败`)
+      message.error(errorMessage)
+      showResultModal(`${label} 回填结果`, errorMessage, false)
     } finally {
       setBusy('')
     }
@@ -884,8 +1038,8 @@ function IntegrationsPanel() {
       })
       setUpdateMode(nextMode)
       message.success(nextMode === 'tag' ? '已切换到 tag 模式' : '已切换到分支模式')
-    } catch (e: any) {
-      message.error(e?.message || '切换失败')
+    } catch (error: unknown) {
+      message.error(getErrorMessage(error, '切换失败'))
     } finally {
       setBusy('')
     }
@@ -893,36 +1047,6 @@ function IntegrationsPanel() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {false ? (
-        <div
-          style={{
-            position: 'fixed',
-            left: '50%',
-            bottom: 24,
-            transform: 'translateX(-50%)',
-            zIndex: 1000,
-            width: 'min(720px, calc(100vw - 32px))',
-            pointerEvents: 'none',
-          }}
-        >
-          <div
-            style={{
-              width: '100%',
-              padding: 0,
-              borderRadius: 0,
-              border: 'none',
-              background: 'transparent',
-              boxShadow: 'none',
-              backdropFilter: 'none',
-              pointerEvents: 'auto',
-            }}
-          >
-            <Button type="primary" icon={<SaveOutlined />} onClick={() => {}} loading={false} block size="large">
-              {saved ? '已保存 ✓' : '保存配置'}
-            </Button>
-          </div>
-        </div>
-      ) : null}
       <Modal
         open={resultModal.open}
         title={resultModal.title}
@@ -1082,7 +1206,7 @@ function ContributionPanel({
   saving,
   saved,
 }: {
-  form: any
+  form: FormInstance<SettingsFormValues>
   onSave: () => Promise<void>
   saving: boolean
   saved: boolean
@@ -1163,8 +1287,8 @@ function ContributionPanel({
       if (!silent) {
         message.success('额度信息已刷新')
       }
-    } catch (e: any) {
-      const detail = String(e?.message || '获取额度信息失败')
+    } catch (error: unknown) {
+      const detail = getErrorMessage(error, '获取额度信息失败')
       setStatsError(detail)
       if (!silent) {
         message.error(detail)
@@ -1212,8 +1336,8 @@ function ContributionPanel({
         message.success('提现成功')
       }
       await fetchStats(true)
-    } catch (e: any) {
-      const detail = String(e?.message || '提现失败')
+    } catch (error: unknown) {
+      const detail = getErrorMessage(error, '提现失败')
       setRedeemResponse({ ok: false, error: detail })
       message.error(detail)
     } finally {
@@ -1244,8 +1368,8 @@ function ContributionPanel({
       if (contributionEnabled) {
         await fetchStats(true, generated)
       }
-    } catch (e: any) {
-      message.error(String(e?.message || '请求新建 key 失败'))
+    } catch (error: unknown) {
+      message.error(getErrorMessage(error, '请求新建 key 失败'))
     } finally {
       setCreatingKey(false)
     }
@@ -1513,7 +1637,7 @@ type TotpSetupState = 'idle' | 'setup'
 
 function SecurityPanel() {
   const { message: msg } = App.useApp()
-  const [status, setStatus] = useState<{ has_password: boolean; has_totp: boolean } | null>(null)
+  const [status, setStatus] = useState<AuthStatusResponse | null>(null)
   const [loading, setLoading] = useState(false)
 
   const [enableForm] = Form.useForm()
@@ -1526,9 +1650,11 @@ function SecurityPanel() {
 
   const loadStatus = async () => {
     try {
-      const s = await apiFetch('/auth/status')
+      const s = await fetchJson<AuthStatusResponse>('/auth/status')
       setStatus(s)
-    } catch {}
+    } catch {
+      setStatus(null)
+    }
   }
 
   useEffect(() => { loadStatus() }, [])
@@ -1540,7 +1666,7 @@ function SecurityPanel() {
     }
     setLoading(true)
     try {
-      const d = await apiFetch('/auth/setup', {
+      const d = await fetchJson<AuthSetupResponse>('/auth/setup', {
         method: 'POST',
         body: JSON.stringify({ password: values.password }),
       })
@@ -1548,8 +1674,8 @@ function SecurityPanel() {
       msg.success('密码保护已启用')
       enableForm.resetFields()
       await loadStatus()
-    } catch (e: any) {
-      msg.error(e.message)
+    } catch (error: unknown) {
+      msg.error(getErrorMessage(error, '启用密码保护失败'))
     } finally {
       setLoading(false)
     }
@@ -1562,8 +1688,8 @@ function SecurityPanel() {
       localStorage.removeItem('auth_token')
       msg.success('密码保护已关闭')
       await loadStatus()
-    } catch (e: any) {
-      msg.error(e.message)
+    } catch (error: unknown) {
+      msg.error(getErrorMessage(error, '关闭密码保护失败'))
     } finally {
       setLoading(false)
     }
@@ -1582,8 +1708,8 @@ function SecurityPanel() {
       })
       msg.success('密码已更新')
       pwForm.resetFields()
-    } catch (e: any) {
-      msg.error(e.message)
+    } catch (error: unknown) {
+      msg.error(getErrorMessage(error, '修改密码失败'))
     } finally {
       setLoading(false)
     }
@@ -1592,12 +1718,12 @@ function SecurityPanel() {
   const handleSetupTotp = async () => {
     setLoading(true)
     try {
-      const d = await apiFetch('/auth/2fa/setup')
+      const d = await fetchJson<TotpSetupResponse>('/auth/2fa/setup')
       setTotpSecret(d.secret)
       setTotpUri(d.uri)
       setTotpSetupState('setup')
-    } catch (e: any) {
-      msg.error(e.message)
+    } catch (error: unknown) {
+      msg.error(getErrorMessage(error, '获取双因素认证信息失败'))
     } finally {
       setLoading(false)
     }
@@ -1614,8 +1740,8 @@ function SecurityPanel() {
       setTotpSetupState('idle')
       codeForm.resetFields()
       await loadStatus()
-    } catch (e: any) {
-      msg.error(e.message)
+    } catch (error: unknown) {
+      msg.error(getErrorMessage(error, '启用双因素认证失败'))
     } finally {
       setLoading(false)
     }
@@ -1627,8 +1753,8 @@ function SecurityPanel() {
       await apiFetch('/auth/2fa/disable', { method: 'POST' })
       msg.success('双因素认证已关闭')
       await loadStatus()
-    } catch (e: any) {
-      msg.error(e.message)
+    } catch (error: unknown) {
+      msg.error(getErrorMessage(error, '关闭双因素认证失败'))
     } finally {
       setLoading(false)
     }
@@ -1754,7 +1880,7 @@ function SecurityPanel() {
 }
 
 export default function Settings() {
-  const [form] = Form.useForm()
+  const [form] = Form.useForm<SettingsFormValues>()
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [activeTab, setActiveTab] = useState('register')
@@ -1781,11 +1907,20 @@ export default function Settings() {
       if (!data.applemail_mailboxes) {
         data.applemail_mailboxes = 'INBOX,Junk'
       }
+      if (!data.cfrouting_imap_port) {
+        data.cfrouting_imap_port = '993'
+      }
+      if (!data.cfrouting_mailboxes) {
+        data.cfrouting_mailboxes = 'INBOX'
+      }
       if (!data.outlook_backend) {
         data.outlook_backend = 'graph'
       }
       if (!data.gptmail_base_url) {
         data.gptmail_base_url = 'https://mail.chatgpt.org.uk'
+      }
+      if (!data.gptmail_mode) {
+        data.gptmail_mode = 'api'
       }
       if (!data.maliapi_base_url) {
         data.maliapi_base_url = 'https://maliapi.215.im/v1'
@@ -1827,6 +1962,11 @@ export default function Settings() {
       }
       data.mail_import_source = configMailProvider === 'applemail' ? 'applemail' : 'microsoft'
       data.mail_provider = isMailImportProvider ? 'mail_import' : configMailProvider
+      try {
+        data.ddg_keys_config = JSON.parse(data.ddg_keys_config || '[]')
+      } catch {
+        data.ddg_keys_config = []
+      }
       form.setFieldsValue(data)
     })
   }, [form])
@@ -1889,6 +2029,7 @@ export default function Settings() {
       values.cfworker_random_subdomain = parseBooleanConfigValue(values.cfworker_random_subdomain)
       values.cfworker_random_name_subdomain = parseBooleanConfigValue(values.cfworker_random_name_subdomain)
       values.contribution_enabled = parseBooleanConfigValue(values.contribution_enabled)
+      values.ddg_keys_config = JSON.stringify(values.ddg_keys_config || [])
       values.email_domain_rule_enabled = parseBooleanConfigValue(values.email_domain_rule_enabled)
       const rawDomainLevelCount = Number.parseInt(String(values.email_domain_level_count ?? '').trim(), 10)
       if (values.mail_provider === 'cfworker' && values.email_domain_rule_enabled) {
@@ -1915,6 +2056,7 @@ export default function Settings() {
         cfworker_random_subdomain: values.cfworker_random_subdomain,
         cfworker_random_name_subdomain: values.cfworker_random_name_subdomain,
         contribution_enabled: values.contribution_enabled,
+        ddg_keys_config: JSON.parse(values.ddg_keys_config || '[]'),
         contribution_mode: values.contribution_mode,
         custom_contribution_url: values.custom_contribution_url,
         custom_contribution_token: values.custom_contribution_token,
@@ -1977,7 +2119,7 @@ export default function Settings() {
       </div>
 
       <div style={{ display: 'flex', gap: 24 }}>
-        <div style={{ width: 200 }}>
+        <div style={{ width: 200, position: 'sticky', top: 24, alignSelf: 'flex-start', maxHeight: 'calc(100vh - 120px)', overflowY: 'auto' }}>
           <Tabs
             tabPosition="left"
             activeKey={activeTab}
@@ -1994,7 +2136,7 @@ export default function Settings() {
           />
         </div>
 
-        <div ref={contentPaneRef} style={{ flex: 1 }}>
+        <div ref={contentPaneRef} style={{ flex: 1, minWidth: 0 }}>
           {activeTab === 'integrations' ? (
             <IntegrationsPanel />
           ) : activeTab === 'security' ? (
@@ -2020,6 +2162,7 @@ export default function Settings() {
                         <ConfigSection key={section.title} section={section} />
                       ))}
                       {currentMailProviderRaw !== 'cfworker' ? <CFWorkerDomainPoolSection form={form} /> : null}
+                      <DDGKeysConfigSection form={form} onSave={save} saving={saving} saved={saved} />
                     </>
                   ) : (
                     currentTab.sections.map((section) => (

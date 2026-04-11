@@ -218,10 +218,11 @@ def maintain_cpa_credentials() -> dict[str, Any]:
     deleted_count = 0
 
     if error_names:
-        delete_auth_files(error_names)
-        deleted_count = len(error_names)
-        print(f"[CPA] 已删除 {deleted_count} 个 status=error 的凭证")
-        files = list_auth_files()
+        # 已禁用自动删除，仅记录
+        print(f"[CPA] 发现 {len(error_names)} 个 status=error 的凭证（自动删除已禁用）: {error_names}")
+        # delete_auth_files(error_names)
+        # deleted_count = len(error_names)
+        # print(f"[CPA] 已删除 {deleted_count} 个 status=error 的凭证")
 
     remaining_count = _count_remaining(files)
     result: dict[str, Any] = {
@@ -231,15 +232,8 @@ def maintain_cpa_credentials() -> dict[str, Any]:
         "threshold": config.threshold,
     }
 
-    if remaining_count >= config.threshold:
-        print(f"[CPA] 剩余凭证 {remaining_count}，阈值 {config.threshold}，无需补注册")
-        result["register"] = {"triggered": False, "reason": "enough_credentials"}
-        return result
+    # 已禁用自动补注册
+    print(f"[CPA] 剩余凭证 {remaining_count}（自动补注册已禁用，阈值 {config.threshold}）")
+    result["register"] = {"triggered": False, "reason": "auto_register_disabled"}
 
-    missing_count = config.threshold - remaining_count
-    result["register"] = _trigger_register(
-        missing_count,
-        config=config,
-        remaining_count=remaining_count,
-    )
     return result

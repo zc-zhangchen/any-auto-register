@@ -1,0 +1,49 @@
+[project]
+name = "any-auto-register"
+version = "0.1.0"
+description = "多平台账号自动注册与管理系统"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "aiofiles>=23.0.0",
+    "camoufox>=0.4.0",
+    "cbor2>=5.4.0",
+    "curl-cffi>=0.6.0",
+    "fastapi>=0.110.0",
+    "httpx>=0.27.0",
+    "jwcrypto>=1.5.0",
+    "names>=0.3.0",
+    "patchright>=1.52.5",
+    "playwright>=1.43.0",
+    "pydantic>=2.0.0",
+    "pyinstaller>=6.0.0",
+    "pysocks>=1.7.1",
+    "quart>=0.19.4",
+    "requests>=2.31.0",
+    "rich>=13.7.1",
+    "selectolax>=0.3.21",
+    "sqlmodel>=0.0.16",
+    "uvicorn>=0.29.0",
+]
+
+[tool.uv]
+package = false
+
+[dependency-groups]
+dev = [
+    "mypy>=1.20.0",
+    "ruff>=0.15.9",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["api/auth.py", "api/config.py", "api/outlook.py"]
+warn_unused_configs = true
+pretty = true

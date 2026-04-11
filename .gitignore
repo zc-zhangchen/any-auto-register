@@ -1,5 +1,6 @@
 # Python
 .venv/
+.uv-cache/
 __pycache__/
 *.pyc
 *.pyo
@@ -29,13 +30,16 @@ smstome*_numbers.txt
 smstome_used/
 
 # 前端
+.pnpm-store/
 frontend/node_modules/
 frontend/dist/
+frontend/.pnpm-store/
 
 # Electron
 electron/node_modules/
 electron/dist/
 electron/backend/
+electron/.pnpm-store/
 
 # PyInstaller
 backend.spec
@@ -78,3 +82,5 @@ kiro_error.*
 
 # 本地数据文件
 account_manager.db
+.codex/config.toml
+.worktrees/

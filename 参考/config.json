@@ -1,0 +1,8 @@
+{
+    "ddgToken": "5xnztezjsc8r7koqwsnslwcqkv7eyg5kyjnsgyqajfvky1ysxroe0ymbh2d9p5",
+    "mailInboxUrl": "https://mailforteam.pathwyze.co/?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhZGRyZXNzIjoiYXRveWE1OUBkZXYucGF0aHd5emUuY28iLCJhZGRyZXNzX2lkIjoyfQ.nM0k6jzB9uCVTfP4A1K2RtCu_DrFz7sUG2xc7fY86fg",
+    "oauthClientId": "app_EMoamEEZ73f0CkXaXp7hrann",
+    "oauthRedirectPort": 1455,
+    "otpTimeout": 120,
+    "otpPollInterval": 3
+}
