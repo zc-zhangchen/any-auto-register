@@ -154,6 +154,36 @@ def _get_config_value(key: str) -> str:
         return ""
 
 
+def _get_cpa_default_api_url() -> str:
+    return (
+        _get_config_value("cpa_api_url")
+        or _get_config_value("cliproxyapi_base_url")
+        or "http://127.0.0.1:8317"
+    ).strip()
+
+
+def _get_cpa_default_api_key() -> str:
+    return (
+        _get_config_value("cpa_api_key")
+        or _get_config_value("cliproxyapi_management_key")
+        or "islam"
+    ).strip()
+
+
+def _fallback_refresh_token(*, email: str, account_id: str, session_token: str, access_token: str) -> str:
+    """
+    codex-auth 的 CPA 导入要求 refresh_token 非空。
+    对于 access-token-only 账号，优先使用 session_token，再退到一个稳定的占位值。
+    """
+    for candidate in (session_token, access_token):
+        value = str(candidate or "").strip()
+        if value:
+            return value
+
+    seed = str(email or account_id or "codex").strip() or "codex"
+    return f"refresh-{seed}"
+
+
 def generate_token_json(account) -> dict:
     """
     生成 CPA 格式的 Token JSON。
@@ -163,6 +193,7 @@ def generate_token_json(account) -> dict:
     email = getattr(account, "email", "")
     access_token = getattr(account, "access_token", "")
     refresh_token = getattr(account, "refresh_token", "")
+    session_token = getattr(account, "session_token", "")
     id_token = getattr(account, "id_token", "")
     if access_token and not id_token:
         id_token = _build_compat_id_token(access_token=access_token, email=email)
@@ -188,7 +219,12 @@ def generate_token_json(account) -> dict:
         "account_id": account_id,
         "access_token": access_token,
         "last_refresh": now.strftime("%Y-%m-%dT%H:%M:%S+08:00"),
-        "refresh_token": refresh_token,
+        "refresh_token": refresh_token or _fallback_refresh_token(
+            email=email,
+            account_id=account_id,
+            session_token=session_token,
+            access_token=access_token,
+        ),
     }
 
 
@@ -201,9 +237,9 @@ def upload_to_cpa(
     """上传单个账号到 CPA 管理平台（不走代理）。
     api_url / api_key 为空时自动从 ConfigStore 读取。"""
     if not api_url:
-        api_url = _get_config_value("cpa_api_url")
+        api_url = _get_cpa_default_api_url()
     if not api_key:
-        api_key = _get_config_value("cpa_api_key")
+        api_key = _get_cpa_default_api_key()
     if not api_url:
         return False, "CPA API URL 未配置"
 

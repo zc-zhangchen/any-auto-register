@@ -134,6 +134,10 @@ def get_config():
         all_cfg["applemail_mailboxes"] = "INBOX,Junk"
     if not all_cfg.get("outlook_backend"):
         all_cfg["outlook_backend"] = "graph"
+    if not all_cfg.get("cliproxyapi_base_url"):
+        all_cfg["cliproxyapi_base_url"] = "http://localhost:8317"
+    if not all_cfg.get("cliproxyapi_management_key"):
+        all_cfg["cliproxyapi_management_key"] = "islam"
     if not all_cfg.get("gptmail_base_url"):
         all_cfg["gptmail_base_url"] = "https://mail.chatgpt.org.uk"
     if not all_cfg.get("luckmail_base_url"):

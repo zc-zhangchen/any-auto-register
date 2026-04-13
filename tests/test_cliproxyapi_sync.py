@@ -66,13 +66,18 @@ class CliproxyapiSyncTests(unittest.TestCase):
         self.assertEqual(sleep_mock.call_count, 2)
 
     def test_sync_returns_not_found_when_remote_auth_missing(self):
-        account = DummyAccount()
+        account = DummyAccount(token="access-token")
+        account.access_token = "access-token"
 
         with mock.patch("services.cliproxyapi_sync.list_auth_files", return_value=[]):
-            result = sync_chatgpt_cliproxyapi_status(account, api_url="http://127.0.0.1:8317", api_key="demo")
+            with mock.patch(
+                "platforms.chatgpt.cpa_upload.upload_to_cpa",
+                return_value=(False, "上传失败: HTTP 401"),
+            ):
+                result = sync_chatgpt_cliproxyapi_status(account, api_url="http://127.0.0.1:8317", api_key="demo")
 
         self.assertFalse(result["uploaded"])
-        self.assertIn("未在 CLIProxyAPI 找到匹配", result["message"])
+        self.assertIn("上传失败", result["message"])
 
     def test_sync_uses_matching_codex_auth_and_probe(self):
         account = DummyAccount(email="demo@example.com", user_id="acct-123")
@@ -104,6 +109,130 @@ class CliproxyapiSyncTests(unittest.TestCase):
         self.assertTrue(result["uploaded"])
         self.assertEqual(result["auth_index"], "auth-001")
         self.assertEqual(result["remote_state"], "usable")
+
+    def test_sync_matches_codex_auth_by_user_id_when_email_lookup_is_missing(self):
+        account = DummyAccount(email="", user_id="acct-123")
+        auth_files = [
+            {
+                "name": "acct-123.json",
+                "provider": "codex",
+                "auth_index": "auth-123",
+                "status": "active",
+                "status_message": "",
+                "unavailable": False,
+            }
+        ]
+
+        with mock.patch("services.cliproxyapi_sync.list_auth_files", return_value=auth_files):
+            with mock.patch(
+                "services.cliproxyapi_sync._probe_remote_auth",
+                return_value={
+                    "last_probe_at": "2026-03-31T00:00:00Z",
+                    "last_probe_status_code": 200,
+                    "last_probe_error_code": "",
+                    "last_probe_message": "ok",
+                    "remote_state": "usable",
+                },
+            ):
+                result = sync_chatgpt_cliproxyapi_status(account, api_url="http://127.0.0.1:8317", api_key="demo")
+
+        self.assertTrue(result["uploaded"])
+        self.assertEqual(result["auth_index"], "auth-123")
+        self.assertEqual(result["remote_state"], "usable")
+
+    def test_sync_seeds_missing_remote_auth_from_local_account(self):
+        account = DummyAccount(email="demo@example.com", token="access-token", user_id="acct-123")
+        account.access_token = "access-token"
+        account.refresh_token = "refresh-token"
+        account.id_token = ""
+        auth_files = [
+            {
+                "name": "demo@example.com.json",
+                "provider": "codex",
+                "email": "demo@example.com",
+                "auth_index": "auth-001",
+                "status": "active",
+                "status_message": "",
+                "unavailable": False,
+            }
+        ]
+
+        with mock.patch("services.cliproxyapi_sync.list_auth_files", side_effect=[[], auth_files]):
+            with mock.patch("services.cliproxyapi_sync.time.sleep"):
+                with mock.patch(
+                    "platforms.chatgpt.cpa_upload.upload_to_cpa",
+                    return_value=(True, "上传成功"),
+                ) as upload_mock:
+                    with mock.patch(
+                        "services.cliproxyapi_sync._probe_remote_auth",
+                        return_value={
+                            "last_probe_at": "2026-03-31T00:00:00Z",
+                            "last_probe_status_code": 200,
+                            "last_probe_error_code": "",
+                            "last_probe_message": "ok",
+                            "remote_state": "usable",
+                        },
+                    ):
+                        result = sync_chatgpt_cliproxyapi_status(account, api_url="http://localhost:8317", api_key="islam")
+
+        self.assertTrue(result["uploaded"])
+        self.assertEqual(result["remote_state"], "usable")
+        self.assertEqual(result["auth_index"], "auth-001")
+        self.assertTrue(result.get("seeded"))
+        upload_mock.assert_called_once()
+
+    def test_sync_seeds_missing_remote_auth_from_sqlite_row_when_account_object_lacks_token(self):
+        account = DummyAccount(email="demo@example.com", token="", user_id="acct-123")
+        account.access_token = ""
+        account.refresh_token = ""
+        account.id_token = ""
+        sqlite_row = mock.Mock()
+        sqlite_row.id = 101
+        sqlite_row.email = "demo@example.com"
+        sqlite_row.user_id = "acct-123"
+        sqlite_row.platform = "chatgpt"
+        sqlite_row.password = "pw"
+        sqlite_row.token = "sqlite-access-token"
+        sqlite_row.get_extra.return_value = {
+            "access_token": "sqlite-access-token",
+            "refresh_token": "sqlite-refresh-token",
+        }
+        auth_files = [
+            {
+                "name": "demo@example.com.json",
+                "provider": "codex",
+                "email": "demo@example.com",
+                "auth_index": "auth-101",
+                "status": "active",
+                "status_message": "",
+                "unavailable": False,
+            }
+        ]
+
+        with mock.patch("services.cliproxyapi_sync._load_local_chatgpt_account", return_value=sqlite_row):
+            with mock.patch("services.cliproxyapi_sync.list_auth_files", side_effect=[[], auth_files]):
+                with mock.patch("services.cliproxyapi_sync.time.sleep"):
+                    with mock.patch(
+                        "platforms.chatgpt.cpa_upload.upload_to_cpa",
+                        return_value=(True, "上传成功"),
+                    ) as upload_mock:
+                        with mock.patch(
+                            "services.cliproxyapi_sync._probe_remote_auth",
+                            return_value={
+                                "last_probe_at": "2026-03-31T00:00:00Z",
+                                "last_probe_status_code": 200,
+                                "last_probe_error_code": "",
+                                "last_probe_message": "ok",
+                                "remote_state": "usable",
+                            },
+                        ):
+                            result = sync_chatgpt_cliproxyapi_status(account, api_url="http://localhost:8317", api_key="islam")
+
+        self.assertTrue(result["uploaded"])
+        self.assertEqual(result["remote_state"], "usable")
+        self.assertEqual(result["auth_index"], "auth-101")
+        self.assertTrue(result.get("seeded"))
+        upload_mock.assert_called_once()
 
     def test_probe_remote_auth_maps_token_invalidated(self):
         with mock.patch(
