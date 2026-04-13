@@ -1,7 +1,7 @@
 export const EXECUTOR_OPTIONS = [
-  { value: 'protocol', label: '纯协议' },
-  { value: 'headless', label: '无头浏览器' },
-  { value: 'headed', label: '有头浏览器' },
+  { value: 'protocol', label: 'Protocol only' },
+  { value: 'headless', label: 'Headless browser' },
+  { value: 'headed', label: 'Headed browser' },
 ] as const
 
 const PLATFORM_EXECUTORS: Record<string, string[]> = {

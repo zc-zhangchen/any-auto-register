@@ -22,6 +22,7 @@ import {
 } from '@ant-design/icons'
 import { apiFetch } from '@/lib/utils'
 import { TaskLogPanel } from '@/components/TaskLogPanel'
+import { useText } from '@/lib/uiLanguage'
 
 const { Text, Title } = Typography
 
@@ -52,17 +53,17 @@ const PLATFORM_LABELS: Record<string, string> = {
 }
 
 const SOURCE_LABELS: Record<string, string> = {
-  manual: '手动',
+  manual: 'Manual',
   api: 'API',
-  schedule: '调度',
+  schedule: 'Scheduled',
 }
 
 const STATUS_CONFIG: Record<string, { color: string; label: string; icon?: React.ReactNode }> = {
-  pending: { color: 'default', label: '等待中', icon: <LoadingOutlined /> },
-  running: { color: 'processing', label: '运行中', icon: <LoadingOutlined /> },
-  done: { color: 'success', label: '已完成' },
-  failed: { color: 'error', label: '失败' },
-  stopped: { color: 'warning', label: '已停止' },
+  pending: { color: 'default', label: 'Pending', icon: <LoadingOutlined /> },
+  running: { color: 'processing', label: 'Running', icon: <LoadingOutlined /> },
+  done: { color: 'success', label: 'Completed' },
+  failed: { color: 'error', label: 'Failed' },
+  stopped: { color: 'warning', label: 'Stopped' },
 }
 
 function toUnixSeconds(value: unknown): number | null {
@@ -96,6 +97,7 @@ function formatDuration(startTs: unknown, endTs?: unknown): string {
 }
 
 export default function RunningTasks() {
+  const t = useText()
   const [tasks, setTasks] = useState<TaskSnapshot[]>([])
   const [loading, setLoading] = useState(false)
   const [logTaskId, setLogTaskId] = useState<string | null>(null)
@@ -144,9 +146,9 @@ export default function RunningTasks() {
       await apiFetch(`/tasks/${taskId}`, { method: 'DELETE' })
       if (logTaskId === taskId) setLogTaskId(null)
       setTasks((prev) => prev.filter((t) => t.id !== taskId))
-      message.success('任务已删除')
+      message.success(t('任务已删除', 'Task deleted'))
     } catch (error) {
-      const detail = error instanceof Error ? error.message : '删除失败'
+      const detail = error instanceof Error ? error.message : t('删除失败', 'Delete failed')
       message.error(detail)
     }
   }
@@ -246,18 +248,18 @@ export default function RunningTasks() {
                 icon={<FileTextOutlined />}
                 onClick={() => setLogTaskId(task.id)}
               >
-                查看日志
+                {t('查看日志', 'View logs')}
               </Button>
               {!isActive(task) && (
                 <Popconfirm
-                  title="确认删除该任务记录？"
-                  okText="删除"
-                  cancelText="取消"
+                  title={t('确认删除该任务记录？', 'Delete this task record?')}
+                  okText={t('删除', 'Delete')}
+                  cancelText={t('取消', 'Cancel')}
                   okButtonProps={{ danger: true }}
                   onConfirm={() => handleDelete(task.id)}
                 >
                   <Button size="small" danger icon={<DeleteOutlined />}>
-                    删除
+                    {t('删除', 'Delete')}
                   </Button>
                 </Popconfirm>
               )}
@@ -279,10 +281,10 @@ export default function RunningTasks() {
         }}
       >
         <Title level={4} style={{ margin: 0 }}>
-          任务运行
+          {t('任务运行', 'Running Tasks')}
         </Title>
         <Button icon={<ReloadOutlined />} loading={loading} onClick={load}>
-          刷新
+          {t('刷新', 'Refresh')}
         </Button>
       </div>
 
@@ -293,7 +295,7 @@ export default function RunningTasks() {
             strong
             style={{ display: 'block', marginBottom: 8, fontSize: 13, color: '#6366f1' }}
           >
-            进行中 ({activeTasks.length})
+            {t('进行中', 'Active')} ({activeTasks.length})
           </Text>
           {activeTasks.map(renderTask)}
         </div>
@@ -306,14 +308,14 @@ export default function RunningTasks() {
             strong
             style={{ display: 'block', marginBottom: 8, fontSize: 13, color: '#6b7280' }}
           >
-            已完成 ({finishedTasks.length})
+            {t('已完成', 'Completed')} ({finishedTasks.length})
           </Text>
           {finishedTasks.map(renderTask)}
         </div>
       )}
 
       {tasks.length === 0 && !loading && (
-        <Empty description="暂无任务记录" style={{ marginTop: 60 }} />
+        <Empty description={t('暂无任务记录', 'No task records yet')} style={{ marginTop: 60 }} />
       )}
 
       {/* Log drawer */}
@@ -321,7 +323,7 @@ export default function RunningTasks() {
         title={
           <Space>
             <FileTextOutlined />
-            <span>任务日志</span>
+            <span>{t('任务日志', 'Task logs')}</span>
             {logTaskId && (
               <Text code style={{ fontSize: 11 }}>
                 {logTaskId}

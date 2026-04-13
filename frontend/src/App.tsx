@@ -9,6 +9,7 @@ import {
   SettingOutlined,
   SunOutlined,
   MoonOutlined,
+  TranslationOutlined,
   LogoutOutlined,
   PlayCircleOutlined,
 } from '@ant-design/icons'
@@ -23,6 +24,7 @@ import RunningTasks from '@/pages/RunningTasks'
 import Login from '@/pages/Login'
 import { darkTheme, lightTheme } from './theme'
 import { apiFetch, clearToken, getToken } from '@/lib/utils'
+import { UiLanguageProvider, useText, useUiLanguage, type UiLanguage } from '@/lib/uiLanguage'
 
 const { Sider, Content } = Layout
 
@@ -64,6 +66,8 @@ function AppContent() {
   const [hasPassword, setHasPassword] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
+  const { language, setLanguage } = useUiLanguage()
+  const t = useText()
 
   useEffect(() => {
     document.documentElement.classList.toggle('light', themeMode === 'light')
@@ -73,6 +77,10 @@ function AppContent() {
     )
     localStorage.setItem('theme', themeMode)
   }, [themeMode])
+
+  useEffect(() => {
+    localStorage.setItem('language', language)
+  }, [language])
 
   useEffect(() => {
     fetch('/api/auth/status').then(r => r.json()).then(s => setHasPassword(s.has_password)).catch(() => {})
@@ -104,17 +112,17 @@ function AppContent() {
     {
       key: '/',
       icon: <DashboardOutlined />,
-      label: '仪表盘',
+      label: t('仪表盘', 'Dashboard'),
     },
     {
       key: '/running-tasks',
       icon: <PlayCircleOutlined />,
-      label: '任务运行',
+      label: t('任务运行', 'Running Tasks'),
     },
     {
       key: '/accounts',
       icon: <UserOutlined />,
-      label: '平台管理',
+      label: t('平台管理', 'Platform Management'),
       children: [
         ...platforms.map(p => ({
           key: `/accounts/${p.key}`,
@@ -125,140 +133,158 @@ function AppContent() {
     {
       key: '/history',
       icon: <HistoryOutlined />,
-      label: '任务历史',
+      label: t('任务历史', 'Task History'),
     },
     {
       key: '/proxies',
       icon: <GlobalOutlined />,
-      label: '代理管理',
+      label: t('代理管理', 'Proxy Management'),
     },
     {
       key: '/settings',
       icon: <SettingOutlined />,
-      label: '全局配置',
+      label: t('全局配置', 'Global Settings'),
     },
   ]
 
   return (
-    <ConfigProvider theme={currentTheme} locale={zhCN}>
+    <ConfigProvider theme={currentTheme} locale={language === 'zh' ? zhCN : undefined}>
       <AntdApp>
-      <Layout style={{ minHeight: '100vh' }}>
-        <Sider
-          collapsible
-          collapsed={collapsed}
-          onCollapse={setCollapsed}
-          style={{
-            background: currentTheme.token?.colorBgContainer,
-            borderRight: `1px solid ${currentTheme.token?.colorBorder}`,
-          }}
-          width={220}
-        >
-          <div
+        <Layout style={{ minHeight: '100vh' }}>
+          <Sider
+            collapsible
+            collapsed={collapsed}
+            onCollapse={setCollapsed}
             style={{
-              height: 64,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderBottom: `1px solid ${currentTheme.token?.colorBorder}`,
+              background: currentTheme.token?.colorBgContainer,
+              borderRight: `1px solid ${currentTheme.token?.colorBorder}`,
             }}
+            width={220}
           >
-            <DashboardOutlined style={{ fontSize: 20, color: currentTheme.token?.colorPrimary }} />
-            {!collapsed && (
-              <span
-                style={{
-                  marginLeft: 8,
-                  fontWeight: 600,
-                  fontSize: 14,
-                  color: currentTheme.token?.colorText,
-                }}
-              >
-                Account Manager
-              </span>
-            )}
-          </div>
-          <Menu
-            mode="inline"
-            selectedKeys={getSelectedKey()}
-            defaultOpenKeys={['/accounts']}
-            items={menuItems}
-            onClick={({ key }) => navigate(key)}
-            style={{
-              borderRight: 0,
-              background: 'transparent',
-            }}
-          />
-          <div
-            style={{
-              position: 'absolute',
-              bottom: 56,
-              left: 0,
-              right: 0,
-              padding: '0 16px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 8,
-            }}
-          >
-            <Button
-              block
-              icon={isLight ? <SunOutlined /> : <MoonOutlined />}
-              onClick={() => setThemeMode(isLight ? 'dark' : 'light')}
+            <div
               style={{
+                height: 64,
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: collapsed ? 'center' : 'space-between',
+                justifyContent: 'center',
+                borderBottom: `1px solid ${currentTheme.token?.colorBorder}`,
               }}
             >
-              {!collapsed && (isLight ? '亮色模式' : '暗色模式')}
-            </Button>
-            {hasPassword && (
+              <DashboardOutlined style={{ fontSize: 20, color: currentTheme.token?.colorPrimary }} />
+              {!collapsed && (
+                <span
+                  style={{
+                    marginLeft: 8,
+                    fontWeight: 600,
+                    fontSize: 14,
+                    color: currentTheme.token?.colorText,
+                  }}
+                >
+                  Account Manager
+                </span>
+              )}
+            </div>
+            <Menu
+              mode="inline"
+              selectedKeys={getSelectedKey()}
+              defaultOpenKeys={['/accounts']}
+              items={menuItems}
+              onClick={({ key }) => navigate(key)}
+              style={{
+                borderRight: 0,
+                background: 'transparent',
+              }}
+            />
+            <div
+              style={{
+                position: 'absolute',
+                bottom: 56,
+                left: 0,
+                right: 0,
+                padding: '0 16px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
               <Button
                 block
-                danger
-                icon={<LogoutOutlined />}
-                onClick={() => { clearToken(); navigate('/login') }}
+                icon={isLight ? <SunOutlined /> : <MoonOutlined />}
+                onClick={() => setThemeMode(isLight ? 'dark' : 'light')}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: collapsed ? 'center' : 'space-between',
                 }}
               >
-                {!collapsed && '退出登录'}
+                {!collapsed && (isLight ? t('亮色模式', 'Light Mode') : t('暗色模式', 'Dark Mode'))}
               </Button>
-            )}
-          </div>
-        </Sider>
-        <Content
-          style={{
-            padding: 24,
-            overflow: 'auto',
-            background: currentTheme.token?.colorBgLayout,
-          }}
-        >
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/accounts" element={<Accounts />} />
-            <Route path="/accounts/:platform" element={<Accounts />} />
-            <Route path="/register" element={<RegisterTaskPage />} />
-            <Route path="/running-tasks" element={<RunningTasks />} />
-            <Route path="/history" element={<TaskHistory />} />
-            <Route path="/proxies" element={<Proxies />} />
-            <Route path="/settings" element={<Settings />} />
-          </Routes>
-        </Content>
-      </Layout>
+              <Button
+                block
+                icon={<TranslationOutlined />}
+                onClick={() => setLanguage(language === 'zh' ? 'en' : 'zh')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: collapsed ? 'center' : 'space-between',
+                }}
+              >
+                {!collapsed && (language === 'zh' ? 'EN' : 'CN')}
+              </Button>
+              {hasPassword && (
+                <Button
+                  block
+                  danger
+                  icon={<LogoutOutlined />}
+                  onClick={() => { clearToken(); navigate('/login') }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: collapsed ? 'center' : 'space-between',
+                  }}
+                >
+                  {!collapsed && t('退出登录', 'Log out')}
+                </Button>
+              )}
+            </div>
+          </Sider>
+          <Content
+            style={{
+              padding: 24,
+              overflow: 'auto',
+              background: currentTheme.token?.colorBgLayout,
+            }}
+          >
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/accounts" element={<Accounts />} />
+              <Route path="/accounts/:platform" element={<Accounts />} />
+              <Route path="/register" element={<RegisterTaskPage />} />
+              <Route path="/running-tasks" element={<RunningTasks />} />
+              <Route path="/history" element={<TaskHistory />} />
+              <Route path="/proxies" element={<Proxies />} />
+              <Route path="/settings" element={<Settings />} />
+            </Routes>
+          </Content>
+        </Layout>
       </AntdApp>
     </ConfigProvider>
   )
 }
 
 export default function App() {
+  const [language, setLanguage] = useState<UiLanguage>(() =>
+    (localStorage.getItem('language') as UiLanguage) || 'en'
+  )
+
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/*" element={<ProtectedLayout />} />
-      </Routes>
-    </BrowserRouter>
+    <UiLanguageProvider value={{ language, setLanguage }}>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/*" element={<ProtectedLayout />} />
+        </Routes>
+      </BrowserRouter>
+    </UiLanguageProvider>
   )
 }

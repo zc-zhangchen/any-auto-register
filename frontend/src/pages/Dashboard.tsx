@@ -8,6 +8,7 @@ import {
   ReloadOutlined,
 } from '@ant-design/icons'
 import { apiFetch } from '@/lib/utils'
+import { useText } from '@/lib/uiLanguage'
 
 const PLATFORM_COLORS: Record<string, string> = {
   trae: '#3b82f6',
@@ -23,6 +24,7 @@ const STATUS_COLORS: Record<string, string> = {
 }
 
 export default function Dashboard() {
+  const t = useText()
   const [stats, setStats] = useState<any>(null)
   const [loading, setLoading] = useState(false)
 
@@ -42,25 +44,25 @@ export default function Dashboard() {
 
   const statCards = [
     {
-      title: '总账号数',
+      title: t('总账号数', 'Total accounts'),
       value: stats?.total ?? 0,
       icon: <UserOutlined style={{ fontSize: 32 }} />,
       color: '#6366f1',
     },
     {
-      title: '试用中',
+      title: t('试用中', 'Trial'),
       value: stats?.by_status?.trial ?? 0,
       icon: <ClockCircleOutlined style={{ fontSize: 32 }} />,
       color: '#f59e0b',
     },
     {
-      title: '已订阅',
+      title: t('已订阅', 'Subscribed'),
       value: stats?.by_status?.subscribed ?? 0,
       icon: <CheckCircleOutlined style={{ fontSize: 32 }} />,
       color: '#10b981',
     },
     {
-      title: '已失效',
+      title: t('已失效', 'Invalid'),
       value: (stats?.by_status?.expired ?? 0) + (stats?.by_status?.invalid ?? 0),
       icon: <CloseCircleOutlined style={{ fontSize: 32 }} />,
       color: '#ef4444',
@@ -71,11 +73,11 @@ export default function Dashboard() {
     <div style={{ padding: 0 }}>
       <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <h1 style={{ fontSize: 24, fontWeight: 'bold', margin: 0 }}>仪表盘</h1>
-          <p style={{ color: '#7a8ba3', marginTop: 4 }}>账号总览</p>
+          <h1 style={{ fontSize: 24, fontWeight: 'bold', margin: 0 }}>{t('仪表盘', 'Dashboard')}</h1>
+          <p style={{ color: '#7a8ba3', marginTop: 4 }}>{t('账号总览', 'Account overview')}</p>
         </div>
         <Button icon={<ReloadOutlined spin={loading} />} onClick={load} loading={loading}>
-          刷新
+          {t('刷新', 'Refresh')}
         </Button>
       </div>
 
@@ -94,7 +96,7 @@ export default function Dashboard() {
 
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
         <Col xs={24} lg={12}>
-          <Card title="平台分布">
+          <Card title={t('平台分布', 'Platform breakdown')}>
             {loading ? (
               <div style={{ textAlign: 'center', padding: 40 }}>
                 <Spin />
@@ -114,13 +116,13 @@ export default function Dashboard() {
                 </div>
               ))
             ) : (
-              <div style={{ textAlign: 'center', color: '#7a8ba3' }}>加载中...</div>
-            )}
+                <div style={{ textAlign: 'center', color: '#7a8ba3' }}>{t('加载中...', 'Loading...')}</div>
+              )}
           </Card>
         </Col>
 
         <Col xs={24} lg={12}>
-          <Card title="状态分布">
+          <Card title={t('状态分布', 'Status breakdown')}>
             {loading ? (
               <div style={{ textAlign: 'center', padding: 40 }}>
                 <Spin />
@@ -142,8 +144,8 @@ export default function Dashboard() {
                 </div>
               ))
             ) : (
-              <div style={{ textAlign: 'center', color: '#7a8ba3' }}>加载中...</div>
-            )}
+                <div style={{ textAlign: 'center', color: '#7a8ba3' }}>{t('加载中...', 'Loading...')}</div>
+              )}
           </Card>
         </Col>
       </Row>

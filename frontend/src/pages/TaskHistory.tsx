@@ -3,6 +3,7 @@ import { Card, Table, Select, Button, Tag, Space, Popconfirm, Typography, messag
 import type { TableColumnsType } from 'antd'
 import { ReloadOutlined, DeleteOutlined } from '@ant-design/icons'
 import { apiFetch } from '@/lib/utils'
+import { useText, useUiLanguage } from '@/lib/uiLanguage'
 
 const { Text } = Typography
 
@@ -27,6 +28,8 @@ interface TaskLogBatchDeleteResponse {
 }
 
 export default function TaskHistory() {
+  const t = useText()
+  const { language } = useUiLanguage()
   const [logs, setLogs] = useState<TaskLogItem[]>([])
   const [total, setTotal] = useState(0)
   const [platform, setPlatform] = useState('')
@@ -59,9 +62,9 @@ export default function TaskHistory() {
       body: JSON.stringify({ ids: selectedRowKeys }),
     }) as TaskLogBatchDeleteResponse
 
-    message.success(`已删除 ${result.deleted} 条任务历史`)
+    message.success(t(`已删除 ${result.deleted} 条任务历史`, `Deleted ${result.deleted} history items`))
     if (result.not_found.length > 0) {
-      message.warning(`${result.not_found.length} 条记录不存在或已被删除`)
+      message.warning(t(`${result.not_found.length} 条记录不存在或已被删除`, `${result.not_found.length} records were missing or already deleted`))
     }
     setSelectedRowKeys([])
     await load()
@@ -69,38 +72,38 @@ export default function TaskHistory() {
 
   const columns: TableColumnsType<TaskLogItem> = [
     {
-      title: '时间',
+      title: t('时间', 'Time'),
       dataIndex: 'created_at',
       key: 'created_at',
       width: 180,
-      render: (text: string) => (text ? new Date(text).toLocaleString('zh-CN') : '-'),
+      render: (text: string) => (text ? new Date(text).toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US') : '-'),
     },
     {
-      title: '平台',
+      title: t('平台', 'Platform'),
       dataIndex: 'platform',
       key: 'platform',
       width: 100,
       render: (text: string) => <Tag>{text}</Tag>,
     },
     {
-      title: '邮箱',
+      title: t('邮箱', 'Email'),
       dataIndex: 'email',
       key: 'email',
       render: (text: string) => <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{text}</span>,
     },
     {
-      title: '状态',
+      title: t('状态', 'Status'),
       dataIndex: 'status',
       key: 'status',
       width: 80,
       render: (status: string) => (
         <Tag color={status === 'success' ? 'success' : 'error'}>
-          {status === 'success' ? '成功' : '失败'}
+          {status === 'success' ? t('成功', 'Success') : t('失败', 'Failed')}
         </Tag>
       ),
     },
     {
-      title: '错误信息',
+      title: t('错误信息', 'Error'),
       dataIndex: 'error',
       key: 'error',
       render: (text: string) => text || '-',
@@ -111,22 +114,22 @@ export default function TaskHistory() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <h1 style={{ fontSize: 24, fontWeight: 'bold', margin: 0 }}>任务历史</h1>
-          <p style={{ color: '#7a8ba3', marginTop: 4 }}>注册任务执行记录</p>
+          <h1 style={{ fontSize: 24, fontWeight: 'bold', margin: 0 }}>{t('任务历史', 'Task History')}</h1>
+          <p style={{ color: '#7a8ba3', marginTop: 4 }}>{t('注册任务执行记录', 'Registration task execution records')}</p>
         </div>
         <Space>
-          <Text type="secondary">{total} 条记录</Text>
-          {selectedRowKeys.length > 0 && <Text type="success">已选 {selectedRowKeys.length} 条</Text>}
+          <Text type="secondary">{t(`${total} 条记录`, `${total} records`)}</Text>
+          {selectedRowKeys.length > 0 && <Text type="success">{t(`已选 ${selectedRowKeys.length} 条`, `${selectedRowKeys.length} selected`)}</Text>}
           {selectedRowKeys.length > 0 && (
             <Popconfirm
-              title={`确认删除选中的 ${selectedRowKeys.length} 条任务历史？`}
+              title={t(`确认删除选中的 ${selectedRowKeys.length} 条任务历史？`, `Delete the selected ${selectedRowKeys.length} history items?`)}
               onConfirm={handleBatchDelete}
-              okText="删除"
-              cancelText="取消"
+              okText={t('删除', 'Delete')}
+              cancelText={t('取消', 'Cancel')}
               okButtonProps={{ danger: true }}
             >
               <Button danger icon={<DeleteOutlined />}>
-                删除 {selectedRowKeys.length} 条
+                {t(`删除 ${selectedRowKeys.length} 条`, `Delete ${selectedRowKeys.length}`)}
               </Button>
             </Popconfirm>
           )}
@@ -138,7 +141,7 @@ export default function TaskHistory() {
             }}
             style={{ width: 120 }}
             options={[
-              { value: '', label: '全部平台' },
+              { value: '', label: t('全部平台', 'All platforms') },
               { value: 'trae', label: 'Trae' },
               { value: 'cursor', label: 'Cursor' },
             ]}

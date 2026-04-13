@@ -9,9 +9,11 @@ import {
   SwapRightOutlined,
   SwapLeftOutlined,
 } from '@ant-design/icons'
+import { useText } from '@/lib/uiLanguage'
 import { apiFetch } from '@/lib/utils'
 
 export default function Proxies() {
+  const t = useText()
   const [proxies, setProxies] = useState<any[]>([])
   const [newProxy, setNewProxy] = useState('')
   const [region, setRegion] = useState('')
@@ -48,23 +50,23 @@ export default function Proxies() {
           body: JSON.stringify({ url: lines[0], region }),
         })
       }
-      message.success('添加成功')
+      message.success(t('添加成功', 'Added successfully'))
       setNewProxy('')
       setRegion('')
       load()
     } catch (e: any) {
-      message.error(`添加失败: ${e.message}`)
+      message.error(t(`添加失败: ${e.message}`, `Add failed: ${e.message}`))
     }
   }
 
   const del = async (id: number) => {
     try {
       await apiFetch(`/proxies/${id}`, { method: 'DELETE' })
-      message.success('删除成功')
+      message.success(t('删除成功', 'Deleted successfully'))
       setSelectedRowKeys((prev) => prev.filter((key) => key !== id))
       load()
     } catch (e: any) {
-      message.error(`删除失败: ${e.message || '未知错误'}`)
+      message.error(t(`删除失败: ${e.message || '未知错误'}`, `Delete failed: ${e.message || 'unknown error'}`))
     }
   }
 
@@ -81,13 +83,13 @@ export default function Proxies() {
 
       const notFound = (result.not_found || []) as number[]
       Modal.success({
-        title: '批量删除结果',
-        okText: '知道了',
+        title: t('批量删除结果', 'Batch delete results'),
+        okText: t('知道了', 'Got it'),
         content: (
           <div>
-            <div>请求删除：{result.total_requested ?? ids.length} 条</div>
-            <div>成功删除：{result.deleted ?? 0} 条</div>
-            <div>未找到：{notFound.length} 条</div>
+            <div>{t('请求删除：', 'Requested delete: ')}{result.total_requested ?? ids.length} {t('条', 'items')}</div>
+            <div>{t('成功删除：', 'Deleted: ')}{result.deleted ?? 0} {t('条', 'items')}</div>
+            <div>{t('未找到：', 'Not found: ')}{notFound.length} {t('条', 'items')}</div>
             {notFound.length > 0 && (
               <div style={{ marginTop: 8, maxHeight: 120, overflow: 'auto', fontFamily: 'monospace' }}>
                 {notFound.join(', ')}
@@ -97,7 +99,7 @@ export default function Proxies() {
         ),
       })
     } catch (e: any) {
-      message.error(`批量删除失败: ${e.message || '未知错误'}`)
+      message.error(t(`批量删除失败: ${e.message || '未知错误'}`, `Batch delete failed: ${e.message || 'unknown error'}`))
     }
   }
 
@@ -117,19 +119,19 @@ export default function Proxies() {
 
   const columns: any[] = [
     {
-      title: '代理地址',
+      title: t('代理地址', 'Proxy URL'),
       dataIndex: 'url',
       key: 'url',
       render: (text: string) => <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{text}</span>,
     },
     {
-      title: '地区',
+      title: t('地区', 'Region'),
       dataIndex: 'region',
       key: 'region',
       render: (text: string) => text || '-',
     },
     {
-      title: '成功/失败',
+      title: t('成功/失败', 'Success/Fail'),
       key: 'stats',
       render: (_: any, record: any) => (
         <Space>
@@ -140,17 +142,17 @@ export default function Proxies() {
       ),
     },
     {
-      title: '状态',
+      title: t('状态', 'Status'),
       dataIndex: 'is_active',
       key: 'is_active',
       render: (active: boolean) => (
         <Tag color={active ? 'success' : 'error'} icon={active ? <CheckCircleOutlined /> : <CloseCircleOutlined />}>
-          {active ? '活跃' : '禁用'}
+          {active ? t('活跃', 'Active') : t('禁用', 'Disabled')}
         </Tag>
       ),
     },
     {
-      title: '操作',
+      title: t('操作', 'Actions'),
       key: 'action',
       render: (_: any, record: any) => (
         <Space>
@@ -161,10 +163,10 @@ export default function Proxies() {
             onClick={() => toggle(record.id)}
           />
           <Popconfirm
-            title="确认删除该代理吗？"
+            title={t('确认删除该代理吗？', 'Delete this proxy?')}
             onConfirm={() => del(record.id)}
-            okText="删除"
-            cancelText="取消"
+            okText={t('删除', 'Delete')}
+            cancelText={t('取消', 'Cancel')}
             okButtonProps={{ danger: true }}
           >
             <Button type="text" size="small" danger icon={<DeleteOutlined />} />
@@ -178,15 +180,15 @@ export default function Proxies() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <h1 style={{ fontSize: 24, fontWeight: 'bold', margin: 0 }}>代理管理</h1>
-          <p style={{ color: '#7a8ba3', marginTop: 4 }}>共 {proxies.length} 个代理</p>
+          <h1 style={{ fontSize: 24, fontWeight: 'bold', margin: 0 }}>{t('代理管理', 'Proxy management')}</h1>
+          <p style={{ color: '#7a8ba3', marginTop: 4 }}>{t(`共 ${proxies.length} 个代理`, `${proxies.length} proxies`)}</p>
         </div>
         <Button icon={<ReloadOutlined spin={checking} />} onClick={check} loading={checking}>
-          检测全部
+          {t('检测全部', 'Check all')}
         </Button>
       </div>
 
-      <Card title="添加代理（每行一个）">
+      <Card title={t('添加代理（每行一个）', 'Add proxies (one per line)')}>
         <Space direction="vertical" style={{ width: '100%' }}>
           <Input.TextArea
             value={newProxy}
@@ -199,11 +201,11 @@ export default function Proxies() {
             <Input
               value={region}
               onChange={(e) => setRegion(e.target.value)}
-              placeholder="地区标签 (如 US, SG)"
+            placeholder={t('地区标签 (如 US, SG)', 'Region tag (e.g. US, SG)')}
               style={{ width: 200 }}
             />
             <Button type="primary" icon={<PlusOutlined />} onClick={add}>
-              添加
+              {t('添加', 'Add')}
             </Button>
           </Space>
         </Space>
@@ -212,18 +214,18 @@ export default function Proxies() {
       <Card>
         <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between' }}>
           <div style={{ color: '#7a8ba3' }}>
-            已选中 {selectedRowKeys.length} 条
+            {t(`已选中 ${selectedRowKeys.length} 条`, `${selectedRowKeys.length} selected`)}
           </div>
           <Popconfirm
-            title={`确认删除选中的 ${selectedRowKeys.length} 条代理？`}
+            title={t(`确认删除选中的 ${selectedRowKeys.length} 条代理？`, `Delete the ${selectedRowKeys.length} selected proxies?`)}
             onConfirm={batchDel}
-            okText="删除"
-            cancelText="取消"
+            okText={t('删除', 'Delete')}
+            cancelText={t('取消', 'Cancel')}
             okButtonProps={{ danger: true }}
             disabled={selectedRowKeys.length === 0}
           >
             <Button danger icon={<DeleteOutlined />} disabled={selectedRowKeys.length === 0}>
-              批量删除
+              {t('批量删除', 'Batch delete')}
             </Button>
           </Popconfirm>
         </div>

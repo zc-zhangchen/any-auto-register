@@ -5,6 +5,7 @@ import {
   CHATGPT_REGISTRATION_MODE_REFRESH_TOKEN,
   type ChatGPTRegistrationMode,
 } from '@/lib/chatgptRegistrationMode'
+import { useText } from '@/lib/uiLanguage'
 
 const { Text } = Typography
 
@@ -19,14 +20,15 @@ export function ChatGPTRegistrationModeSwitch({
 }: ChatGPTRegistrationModeSwitchProps) {
   const hasRefreshTokenSolution =
     mode === CHATGPT_REGISTRATION_MODE_REFRESH_TOKEN
+  const t = useText()
 
   return (
     <Space direction="vertical" size={4} style={{ width: '100%' }}>
       <Space align="center" wrap>
         <Switch
           checked={hasRefreshTokenSolution}
-          checkedChildren="有 RT"
-          unCheckedChildren="无 RT"
+          checkedChildren={t('有 RT', 'With RT')}
+          unCheckedChildren={t('无 RT', 'No RT')}
           onChange={(checked) =>
             onChange(
               checked
@@ -36,13 +38,13 @@ export function ChatGPTRegistrationModeSwitch({
           }
         />
         <Tag color={hasRefreshTokenSolution ? 'success' : 'default'}>
-          {hasRefreshTokenSolution ? '默认推荐' : '兼容旧方案'}
+          {hasRefreshTokenSolution ? t('默认推荐', 'Recommended') : t('兼容旧方案', 'Legacy compatible')}
         </Tag>
       </Space>
       <Text type="secondary">
         {hasRefreshTokenSolution
-          ? '有 RT 方案会走新 PR 链路，产出 Access Token + Refresh Token。'
-          : '无 RT 方案会走当前旧链路，只产出 Access Token / Session，依赖 RT 的能力可能不可用。'}
+          ? t('有 RT 方案会走新 PR 链路，产出 Access Token + Refresh Token。', 'The RT flow uses the new PR chain and outputs Access Token + Refresh Token.')
+          : t('无 RT 方案会走当前旧链路，只产出 Access Token / Session，依赖 RT 的能力可能不可用。', 'The non-RT flow uses the legacy chain and only outputs Access Token / Session. RT-dependent features may be unavailable.')}
       </Text>
     </Space>
   )
