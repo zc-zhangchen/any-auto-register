@@ -16,6 +16,7 @@ import {
 import { parseBooleanConfigValue } from '@/lib/configValueParsers'
 import MailImportPanel from '@/components/settings/MailImportPanel'
 import { apiFetch } from '@/lib/utils'
+import { useText } from '@/lib/uiLanguage'
 
 function resolveEffectiveMailProvider(mailProvider: string, mailImportSource: string) {
   if (mailProvider !== 'mail_import') return mailProvider
@@ -567,15 +568,25 @@ function formatDisplayPercent(value: number | null): string {
 
 function ConfigField({ field }: { field: FieldConfig }) {
   const [showSecret, setShowSecret] = useState(false)
+  const t = useText()
   const options = SELECT_FIELDS[field.key]
   const isBooleanField = field.type === 'boolean'
   const helpText =
     field.key === 'default_executor'
-      ? '仅对支持的平台生效；ChatGPT、Cursor、Grok、Kiro、Tavily、Trae 支持浏览器模式，OpenBlockLabs 仅支持纯协议。'
+      ? t(
+          '仅对支持的平台生效；ChatGPT、Cursor、Grok、Kiro、Tavily、Trae 支持浏览器模式，OpenBlockLabs 仅支持纯协议。',
+          'Only applies to supported platforms; ChatGPT, Cursor, Grok, Kiro, Tavily, and Trae support browser mode, while OpenBlockLabs supports protocol mode only.',
+        )
       : field.key === 'email_domain_rule_enabled'
-      ? '仅 CF Worker 生效：开启后会校验域名级数，以及域名至少包含 2 个字母和 2 个数字。'
+      ? t(
+          '仅 CF Worker 生效：开启后会校验域名级数，以及域名至少包含 2 个字母和 2 个数字。',
+          'CF Worker only: when enabled, the app validates the domain depth and requires at least 2 letters and 2 digits in the domain.',
+        )
       : field.key === 'email_domain_level_count'
-      ? '例如 2=example.com，3=a.example.com，4=a.b.example.com。'
+      ? t(
+          '例如 2=example.com，3=a.example.com，4=a.b.example.com。',
+          'For example: 2=example.com, 3=a.example.com, 4=a.b.example.com.',
+        )
       : undefined
 
   return (
@@ -588,7 +599,7 @@ function ConfigField({ field }: { field: FieldConfig }) {
       {options ? (
         <Select options={options} style={{ width: '100%' }} />
       ) : isBooleanField ? (
-        <Switch checkedChildren="开启" unCheckedChildren="关闭" />
+        <Switch checkedChildren={t('开启', 'On')} unCheckedChildren={t('关闭', 'Off')} />
       ) : field.secret ? (
         <Input.Password
           placeholder={field.placeholder}
@@ -606,8 +617,9 @@ function ConfigField({ field }: { field: FieldConfig }) {
 }
 
 function ConfigSection({ section }: { section: SectionConfig }) {
+  const t = useText()
   return (
-    <Card title={section.title} extra={section.desc && <span style={{ fontSize: 12, color: '#7a8ba3' }}>{section.desc}</span>} style={{ marginBottom: 16 }}>
+    <Card title={section.title} extra={section.desc && <span style={{ fontSize: 12, color: '#7a8ba3' }}>{t(section.desc, section.desc)}</span>} style={{ marginBottom: 16 }}>
       {section.fields.map((field) => (
         <ConfigField key={field.key} field={field} />
       ))}
@@ -616,6 +628,7 @@ function ConfigSection({ section }: { section: SectionConfig }) {
 }
 
 function CFWorkerDomainPoolSection({ form }: { form: any }) {
+  const t = useText()
   const watchedDomains = Form.useWatch('cfworker_domains', form) || []
   const watchedEnabledDomains = Form.useWatch('cfworker_enabled_domains', form) || []
   const normalizedDomains = normalizeDomainList(watchedDomains)
@@ -635,8 +648,8 @@ function CFWorkerDomainPoolSection({ form }: { form: any }) {
 
   return (
     <Card
-      title="CF Worker 域名池"
-      extra={<span style={{ fontSize: 12, color: '#7a8ba3' }}>注册时会从已启用域名中随机选择一个</span>}
+      title={t('CF Worker 域名池', 'CF Worker Domain Pool')}
+      extra={<span style={{ fontSize: 12, color: '#7a8ba3' }}>{t('注册时会从已启用域名中随机选择一个', 'A random enabled domain will be selected during registration')}</span>}
       style={{ marginBottom: 16 }}
     >
       <Form.List name="cfworker_domains">
@@ -648,13 +661,13 @@ function CFWorkerDomainPoolSection({ form }: { form: any }) {
                 <Space key={key} align="start" style={{ display: 'flex' }}>
                   <Form.Item
                     {...restField}
-                    label={field.name === 0 ? '全部域名' : ''}
+                    label={field.name === 0 ? t('全部域名', 'All domains') : ''}
                     style={{ flex: 1, marginBottom: 0 }}
                     rules={[
                       {
                         validator: async (_, value) => {
                           if (!String(value || '').trim()) {
-                            throw new Error('请输入域名')
+                            throw new Error(t('请输入域名', 'Enter a domain'))
                           }
                         },
                       },
@@ -678,15 +691,15 @@ function CFWorkerDomainPoolSection({ form }: { form: any }) {
                     )
                   }}
                 >
-                  删除
+                  {t('删除', 'Delete')}
                 </Button>
               </Space>
             )})}
             {fields.length === 0 ? (
-              <Typography.Text type="secondary">还没有配置域名。添加后即可在下方选择启用项。</Typography.Text>
+              <Typography.Text type="secondary">{t('还没有配置域名。添加后即可在下方选择启用项。', 'No domains configured yet. Add one above, then enable it below.')}</Typography.Text>
             ) : null}
             <Button type="dashed" onClick={() => add('')} icon={<PlusOutlined />} block>
-              添加域名
+              {t('添加域名', 'Add domain')}
             </Button>
           </div>
         )}
@@ -697,7 +710,7 @@ function CFWorkerDomainPoolSection({ form }: { form: any }) {
       </Form.Item>
 
       <div style={{ marginTop: 16 }}>
-        <div style={{ marginBottom: 8, fontWeight: 500 }}>已启用域名</div>
+        <div style={{ marginBottom: 8, fontWeight: 500 }}>{t('已启用域名', 'Enabled domains')}</div>
         {enabledDomains.length > 0 ? (
           <Space wrap>
             {enabledDomains.map((domain) => (
@@ -715,12 +728,12 @@ function CFWorkerDomainPoolSection({ form }: { form: any }) {
             ))}
           </Space>
         ) : (
-          <Typography.Text type="secondary">暂无启用域名，点击下方域名即可启用。</Typography.Text>
+          <Typography.Text type="secondary">{t('暂无启用域名，点击下方域名即可启用。', 'No enabled domains yet. Click a domain below to enable it.')}</Typography.Text>
         )}
       </div>
 
       <div style={{ marginTop: 16 }}>
-        <div style={{ marginBottom: 8, fontWeight: 500 }}>点击切换启用状态</div>
+        <div style={{ marginBottom: 8, fontWeight: 500 }}>{t('点击切换启用状态', 'Click to toggle enabled state')}</div>
         {normalizedDomains.length > 0 ? (
           <Space wrap>
             {normalizedDomains.map((domain) => (
@@ -734,11 +747,11 @@ function CFWorkerDomainPoolSection({ form }: { form: any }) {
             ))}
           </Space>
         ) : (
-          <Typography.Text type="secondary">请先在上方添加域名。</Typography.Text>
+          <Typography.Text type="secondary">{t('请先在上方添加域名。', 'Add a domain above first.')}</Typography.Text>
         )}
       </div>
       <Typography.Text type="secondary" style={{ display: 'block', marginTop: 12 }}>
-        仅已启用域名会参与注册；点击已启用标签可直接移除。
+        {t('仅已启用域名会参与注册；点击已启用标签可直接移除。', 'Only enabled domains are used for registration; click an enabled tag to remove it.')}
       </Typography.Text>
     </Card>
   )
@@ -1754,6 +1767,7 @@ function SecurityPanel() {
 }
 
 export default function Settings() {
+  const t = useText()
   const [form] = Form.useForm()
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -1875,7 +1889,7 @@ export default function Settings() {
 
       if (domains.length > 0 && enabledDomains.length === 0) {
         setActiveTab('mailbox')
-        message.error('CF Worker 至少需要启用一个域名')
+        message.error(t('CF Worker 至少需要启用一个域名', 'CF Worker needs at least one enabled domain'))
         return
       }
 
@@ -1894,7 +1908,7 @@ export default function Settings() {
       if (values.mail_provider === 'cfworker' && values.email_domain_rule_enabled) {
         if (!Number.isInteger(rawDomainLevelCount) || rawDomainLevelCount < 2) {
           setActiveTab('mailbox')
-          message.error('域名级数必须是大于等于 2 的整数')
+          message.error(t('域名级数必须是大于等于 2 的整数', 'Domain depth must be an integer greater than or equal to 2'))
           return
         }
       }
@@ -1921,7 +1935,7 @@ export default function Settings() {
         email_domain_rule_enabled: values.email_domain_rule_enabled,
         email_domain_level_count: values.email_domain_level_count,
       })
-      message.success('保存成功')
+      message.success(t('保存成功', 'Saved'))
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     } finally {
@@ -1966,14 +1980,14 @@ export default function Settings() {
             }}
           >
             <Button type="primary" icon={<SaveOutlined />} onClick={save} loading={saving} block>
-              {saved ? '已保存 ✓' : '保存配置'}
+              {saved ? t('已保存 ✓', 'Saved ✓') : t('保存配置', 'Save settings')}
             </Button>
           </div>
         </div>
       ) : null}
       <div>
-        <h1 style={{ fontSize: 24, fontWeight: 'bold', margin: 0 }}>全局配置</h1>
-        <p style={{ color: '#7a8ba3', marginTop: 4 }}>配置将持久化保存，注册任务自动使用</p>
+        <h1 style={{ fontSize: 24, fontWeight: 'bold', margin: 0 }}>{t('全局配置', 'Global Settings')}</h1>
+        <p style={{ color: '#7a8ba3', marginTop: 4 }}>{t('配置将持久化保存，注册任务自动使用', 'Settings are persisted and used automatically by registration tasks')}</p>
       </div>
 
       <div style={{ display: 'flex', gap: 24 }}>
@@ -2029,7 +2043,7 @@ export default function Settings() {
                   {showFloatingSaveButton ? <div style={{ height: 8 }} /> : null}
                   {!showFloatingSaveButton ? (
                     <Button type="primary" icon={<SaveOutlined />} onClick={save} loading={saving} block>
-                    {saved ? '已保存 ✓' : '保存配置'}
+              {saved ? t('已保存 ✓', 'Saved ✓') : t('保存配置', 'Save settings')}
                     </Button>
                   ) : null}
                 </>

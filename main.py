@@ -1,12 +1,12 @@
 """account_manager - 多平台账号管理后台"""
 import os
 import sys
+import subprocess
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from core.db import init_db
 from core.registry import load_all
 from api.accounts import router as accounts_router
@@ -22,6 +22,8 @@ from api.outlook import router as outlook_router
 from api.contribution import router as contribution_router
 
 EXPECTED_CONDA_ENV = os.getenv("APP_CONDA_ENV", "any-auto-register")
+_ROOT_DIR = os.path.dirname(__file__)
+_FRONTEND_DIR = os.path.join(_ROOT_DIR, "frontend")
 
 
 def _detect_conda_env() -> str:
@@ -55,9 +57,47 @@ def _print_runtime_info() -> None:
         )
 
 
+def _ensure_frontend_static() -> bool:
+    if os.path.isfile(_static_index):
+        return True
+
+    package_json = os.path.join(_FRONTEND_DIR, "package.json")
+    if not os.path.isfile(package_json):
+        return False
+
+    try:
+        node_modules_dir = os.path.join(_FRONTEND_DIR, "node_modules")
+        if not os.path.isdir(node_modules_dir):
+            print("[Build] frontend node_modules not found, running npm install")
+            subprocess.run(["npm", "install"], cwd=_FRONTEND_DIR, check=True)
+
+        print("[Build] building frontend into ./static")
+        subprocess.run(["npm", "run", "build"], cwd=_FRONTEND_DIR, check=True)
+        return os.path.isfile(_static_index)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        print(f"[WARN] Frontend build failed: {exc}")
+        return False
+
+
+def _serve_static_asset(request_path: str):
+    if not os.path.isfile(_static_index):
+        return None
+
+    normalized = os.path.normpath(request_path).lstrip(os.sep)
+    if normalized in {"", "."}:
+        return FileResponse(_static_index)
+
+    root_candidate = os.path.join(_static_dir, normalized)
+    if os.path.isfile(root_candidate) and os.path.commonpath([_static_dir, root_candidate]) == _static_dir:
+        return FileResponse(root_candidate)
+
+    return None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _print_runtime_info()
+    _ensure_frontend_static()
     init_db()
     load_all()
     print("[OK] 数据库初始化完成")
@@ -130,13 +170,47 @@ def solver_restart():
     return {"message": "重启中"}
 
 
-_static_dir = os.path.join(os.path.dirname(__file__), "static")
-if os.path.isdir(_static_dir):
-    app.mount("/assets", StaticFiles(directory=os.path.join(_static_dir, "assets")), name="assets")
+_static_dir = os.path.join(_ROOT_DIR, "static")
+_static_index = os.path.join(_static_dir, "index.html")
+_static_assets_dir = os.path.join(_static_dir, "assets")
 
-    @app.get("/{full_path:path}", include_in_schema=False)
-    def spa_fallback(full_path: str):
-        return FileResponse(os.path.join(_static_dir, "index.html"))
+
+@app.get("/", include_in_schema=False)
+def root():
+    response = _serve_static_asset("")
+    if response is not None:
+        return response
+
+    return HTMLResponse(
+        """
+        <!doctype html>
+        <html lang="zh-CN">
+        <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <title>Account Manager Backend</title>
+          <style>
+            body { font-family: sans-serif; margin: 2rem; line-height: 1.6; }
+            code { background: #f4f4f4; padding: 0.1rem 0.3rem; border-radius: 4px; }
+          </style>
+        </head>
+        <body>
+          <h1>Account Manager backend is running</h1>
+          <p>Frontend static files were not found, so the API started without the web UI.</p>
+          <p>Build the frontend into <code>./static</code> with <code>cd frontend && npm install && npm run build</code>.</p>
+          <p>API status endpoint: <a href="/api/solver/status">/api/solver/status</a></p>
+        </body>
+        </html>
+        """
+    )
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+def spa_fallback(full_path: str):
+    response = _serve_static_asset(full_path)
+    if response is not None:
+        return response
+    return FileResponse(_static_index) if os.path.isfile(_static_index) else HTMLResponse("Not Found", status_code=404)
 
 
 if __name__ == "__main__":

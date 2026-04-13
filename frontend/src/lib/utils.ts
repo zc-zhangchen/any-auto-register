@@ -26,7 +26,7 @@ export async function apiFetch(path: string, opts?: RequestInit) {
     if (window.location.pathname !== '/login') {
       window.location.href = '/login'
     }
-    throw new Error('未认证，请重新登录')
+    throw new Error('Not authenticated, please sign in again')
   }
   if (!res.ok) {
     const text = await res.text()
