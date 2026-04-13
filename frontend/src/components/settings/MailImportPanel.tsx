@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { App, Alert, Button, Card, Form, Input, InputNumber, Popconfirm, Select, Space, Switch, Table, Tag, Typography } from 'antd'
 import type { FormInstance } from 'antd'
 
+import { useText } from '@/lib/uiLanguage'
 import { apiFetch } from '@/lib/utils'
 
 type MailImportProviderType = 'applemail' | 'microsoft'
@@ -124,7 +125,7 @@ function buildDisplayProviders(providers: MailImportProviderDescriptor[]) {
         ...provider,
         type: 'applemail',
         apiType: 'applemail',
-        label: 'AppleMail / 小苹果',
+        label: 'AppleMail / Little Apple',
       })
       continue
     }
@@ -135,30 +136,30 @@ function buildDisplayProviders(providers: MailImportProviderDescriptor[]) {
         type: 'outlook',
         apiType: 'microsoft',
         label: 'Outlook',
-        description: '导入 Outlook 本地号池，支持 mixed 导入（OAuth / MailAPI URL）；运行时按账号类型自动选择 Graph/IMAP 或 MailAPI URL 轮询取码。',
-        helper_text: '支持自动识别：邮箱----密码----client_id----refresh_token 或 邮箱----mailapi_url；当前视图仅展示 @outlook 的 OAuth 账号。',
+        description: 'Import the local Outlook account pool. Mixed imports are supported (OAuth / MailAPI URL); at runtime it automatically chooses Graph/IMAP or MailAPI URL polling based on account type.',
+        helper_text: 'Auto-detects: email----password----client_id----refresh_token or email----mailapi_url; this view only shows @outlook OAuth accounts.',
         content_placeholder: 'example@outlook.com----password----client_id----refresh_token',
-        preview_empty_text: '当前还没有可预览的 Outlook 已导入账号。',
+        preview_empty_text: 'No imported Outlook accounts are available for preview yet.',
       },
       {
         ...provider,
         type: 'hotmail',
         apiType: 'microsoft',
         label: 'Hotmail',
-        description: '导入 Hotmail 本地号池，支持 mixed 导入（OAuth / MailAPI URL）；运行时按账号类型自动选择 Graph/IMAP 或 MailAPI URL 轮询取码。',
-        helper_text: '支持自动识别：邮箱----密码----client_id----refresh_token 或 邮箱----mailapi_url；当前视图仅展示 @hotmail 的 OAuth 账号。',
+        description: 'Import the local Hotmail account pool. Mixed imports are supported (OAuth / MailAPI URL); at runtime it automatically chooses Graph/IMAP or MailAPI URL polling based on account type.',
+        helper_text: 'Auto-detects: email----password----client_id----refresh_token or email----mailapi_url; this view only shows @hotmail OAuth accounts.',
         content_placeholder: 'example@hotmail.com----password----client_id----refresh_token',
-        preview_empty_text: '当前还没有可预览的 Hotmail 已导入账号。',
+        preview_empty_text: 'No imported Hotmail accounts are available for preview yet.',
       },
       {
         ...provider,
         type: 'mailapi',
         apiType: 'microsoft',
         label: 'MailAPI URL',
-        description: '导入 MailAPI URL 账号池（邮箱----mailapi_url），运行时通过 URL 轮询网页内容提取验证码。',
-        helper_text: '支持 mixed 导入。当前视图仅展示 account_type=mailapi_url 的账号。',
+        description: 'Import the MailAPI URL account pool (email----mailapi_url). At runtime, it polls the URL and extracts verification codes from the page content.',
+        helper_text: 'Mixed imports are supported. This view only shows accounts with account_type=mailapi_url.',
         content_placeholder: 'example@hotmail.com----https://mailapi.icu/key?type=html&orderNo=xxxxxxxx',
-        preview_empty_text: '当前还没有可预览的 MailAPI URL 已导入账号。',
+        preview_empty_text: 'No imported MailAPI URL accounts are available for preview yet.',
       },
     )
   }
@@ -210,6 +211,7 @@ function buildResultMessage(result: MailImportResult) {
 
 export default function MailImportPanel({ form }: MailImportPanelProps) {
   const { message } = App.useApp()
+  const t = useText()
   const currentMailProvider = String(Form.useWatch('mail_provider', form) || '') as MailImportFormProviderType
   const currentMailImportSource = String(Form.useWatch('mail_import_source', form) || 'microsoft')
   const watchedPoolDir = String(Form.useWatch('applemail_pool_dir', form) || 'mail')
@@ -276,7 +278,7 @@ export default function MailImportPanel({ form }: MailImportPanelProps) {
         setSelectedType(displayProviders[0].type)
       }
     } catch (error) {
-      const detail = error instanceof Error ? error.message : '加载邮箱导入配置失败'
+      const detail = error instanceof Error ? error.message : t('加载邮箱导入配置失败', 'Failed to load mailbox import settings')
       message.error(detail)
     } finally {
       setLoadingProviders(false)
@@ -327,7 +329,7 @@ export default function MailImportPanel({ form }: MailImportPanelProps) {
   const handleImport = async () => {
     const payload = content.trim()
     if (!payload) {
-      message.error('请输入导入内容')
+      message.error(t('请输入导入内容', 'Enter import content'))
       return
     }
 
@@ -376,7 +378,7 @@ export default function MailImportPanel({ form }: MailImportPanelProps) {
 
       message.success(buildImportSuccessMessage(response))
     } catch (error) {
-      const detail = error instanceof Error ? error.message : '邮箱导入失败'
+      const detail = error instanceof Error ? error.message : t('邮箱导入失败', 'Mailbox import failed')
       message.error(detail)
     } finally {
       setImporting(false)
@@ -417,9 +419,9 @@ export default function MailImportPanel({ form }: MailImportPanelProps) {
       setResult(response)
       setRawSnapshot(response.snapshot)
       setSelectedRowKeys([])
-      message.success(`已删除 ${email}`)
+      message.success(t(`已删除 ${email}`, `Deleted ${email}`))
     } catch (error) {
-      const detail = error instanceof Error ? error.message : '删除失败'
+      const detail = error instanceof Error ? error.message : t('删除失败', 'Deletion failed')
       message.error(detail)
     } finally {
       setDeletingEmail('')
@@ -428,13 +430,13 @@ export default function MailImportPanel({ form }: MailImportPanelProps) {
 
   const handleBatchDelete = async () => {
     if (!selectedRowKeys.length) {
-      message.warning('请先勾选要删除的邮箱')
+      message.warning(t('请先勾选要删除的邮箱', 'Select the mailboxes to delete first'))
       return
     }
 
     const selectedItems = tableData.filter((item) => selectedRowKeys.includes(item.key))
     if (!selectedItems.length) {
-      message.warning('未找到要删除的邮箱')
+      message.warning(t('未找到要删除的邮箱', 'No mailboxes found to delete'))
       return
     }
 
@@ -462,9 +464,9 @@ export default function MailImportPanel({ form }: MailImportPanelProps) {
       setResult(response)
       setRawSnapshot(response.snapshot)
       setSelectedRowKeys([])
-      message.success(`批量删除完成：成功 ${response.summary.success} / 失败 ${response.summary.failed}`)
+      message.success(t(`批量删除完成：成功 ${response.summary.success} / 失败 ${response.summary.failed}`, `Batch delete complete: success ${response.summary.success} / failed ${response.summary.failed}`))
     } catch (error) {
-      const detail = error instanceof Error ? error.message : '批量删除失败'
+      const detail = error instanceof Error ? error.message : t('批量删除失败', 'Batch delete failed')
       const shouldFallbackToSingleDelete = /405|404|Method Not Allowed|Not Found/i.test(detail)
 
       if (!shouldFallbackToSingleDelete) {
@@ -499,20 +501,20 @@ export default function MailImportPanel({ form }: MailImportPanelProps) {
           success += 1
         } catch (singleError) {
           failed += 1
-          errors.push(singleError instanceof Error ? singleError.message : `删除失败: ${item.email}`)
+          errors.push(singleError instanceof Error ? singleError.message : t(`删除失败: ${item.email}`, `Delete failed: ${item.email}`))
         }
       }
 
       setSelectedRowKeys([])
       if (errors.length) {
-        message.warning(`批量删除已回退单条删除：成功 ${success} / 失败 ${failed}`)
+        message.warning(t(`批量删除已回退单条删除：成功 ${success} / 失败 ${failed}`, `Batch delete fell back to deleting items one by one: success ${success} / failed ${failed}`))
         setResult((prev) => prev ? {
           ...prev,
           errors,
           summary: { total: success + failed, success, failed },
         } : prev)
       } else {
-        message.success(`批量删除已回退单条删除：成功 ${success} / 失败 ${failed}`)
+        message.success(t(`批量删除已回退单条删除：成功 ${success} / 失败 ${failed}`, `Batch delete fell back to deleting items one by one: success ${success} / failed ${failed}`))
       }
     } finally {
       setBatchDeleting(false)
@@ -528,7 +530,7 @@ export default function MailImportPanel({ form }: MailImportPanelProps) {
         width: 72,
       },
       {
-        title: '邮箱',
+        title: t('邮箱', 'Email'),
         dataIndex: 'email',
         key: 'email',
       },
@@ -536,7 +538,7 @@ export default function MailImportPanel({ form }: MailImportPanelProps) {
 
     if (selectedType === 'applemail') {
       baseColumns.push({
-        title: '邮箱文件夹',
+        title: t('邮箱文件夹', 'Mailbox folder'),
         dataIndex: 'mailbox',
         key: 'mailbox',
         width: 140,
@@ -545,7 +547,7 @@ export default function MailImportPanel({ form }: MailImportPanelProps) {
     } else {
       baseColumns.push(
         {
-          title: '类型',
+          title: t('类型', 'Type'),
           dataIndex: 'account_type',
           key: 'account_type',
           width: 120,
@@ -555,36 +557,36 @@ export default function MailImportPanel({ form }: MailImportPanelProps) {
           },
         } as never,
         {
-          title: '状态',
+          title: t('状态', 'Status'),
           dataIndex: 'enabled',
           key: 'enabled',
           width: 100,
           render: (value: boolean | null | undefined) => (
-            <Tag color={value ? 'green' : 'default'}>{value ? '启用' : '停用'}</Tag>
+            <Tag color={value ? 'green' : 'default'}>{value ? t('启用', 'Enabled') : t('停用', 'Disabled')}</Tag>
           ),
         } as never,
         {
-          title: '认证',
+          title: t('认证', 'Auth'),
           dataIndex: 'has_oauth',
           key: 'has_oauth',
           width: 100,
           render: (value: boolean | null | undefined) => (
-            <Tag color={value ? 'blue' : 'default'}>{value ? 'OAuth' : '密码'}</Tag>
+            <Tag color={value ? 'blue' : 'default'}>{value ? 'OAuth' : t('密码', 'Password')}</Tag>
           ),
         } as never,
       )
     }
 
     baseColumns.push({
-      title: '操作',
+      title: t('操作', 'Actions'),
       key: 'action',
       width: 90,
       render: (_: unknown, item: MailImportSnapshotItem) => (
         <Popconfirm
-          title="确认删除这个邮箱吗？"
+          title={t('确认删除这个邮箱吗？', 'Delete this mailbox?')}
           description={item.email}
-          okText="删除"
-          cancelText="取消"
+          okText={t('删除', 'Delete')}
+          cancelText={t('取消', 'Cancel')}
           okButtonProps={{ danger: true, loading: deletingEmail === item.email }}
           onConfirm={() => void handleDelete(item)}
         >
@@ -595,7 +597,7 @@ export default function MailImportPanel({ form }: MailImportPanelProps) {
             loading={deletingEmail === item.email}
             style={{ paddingInline: 0 }}
           >
-            删除
+            {t('删除', 'Delete')}
           </Button>
         </Popconfirm>
       ),
@@ -606,7 +608,7 @@ export default function MailImportPanel({ form }: MailImportPanelProps) {
 
   return (
     <Card
-      title="邮箱导入"
+      title={t('邮箱导入', 'Mailbox import')}
       extra={(
         <Select
           value={selectedType}
@@ -623,14 +625,14 @@ export default function MailImportPanel({ form }: MailImportPanelProps) {
     >
       <Space direction="vertical" style={{ width: '100%' }} size={12}>
         <Typography.Text type="secondary">
-          {selectedProvider?.description || '通过统一导入接口，将内容导入到对应邮箱账号池。'}
+          {selectedProvider?.description || t('通过统一导入接口，将内容导入到对应邮箱账号池。', 'Import content into the corresponding mailbox account pool through the unified import interface.')}
         </Typography.Text>
         {selectedProvider?.helper_text ? (
           <Typography.Text type="secondary">{selectedProvider.helper_text}</Typography.Text>
         ) : null}
 
         {selectedProvider?.supports_filename ? (
-          <Form.Item label={selectedProvider.filename_label || '文件名'} style={{ marginBottom: 0 }}>
+          <Form.Item label={selectedProvider.filename_label || t('文件名', 'File name')} style={{ marginBottom: 0 }}>
             <Input
               value={filename}
               onChange={(event) => setFilename(event.target.value)}
@@ -651,23 +653,23 @@ export default function MailImportPanel({ form }: MailImportPanelProps) {
             }}
           >
             <Space align="center">
-              <Typography.Text strong>邮箱裂变（别名）</Typography.Text>
+              <Typography.Text strong>{t('邮箱裂变（别名）', 'Mailbox splitting (aliases)')}</Typography.Text>
               <Switch checked={aliasSplitEnabled} onChange={setAliasSplitEnabled} />
               <Typography.Text type="secondary">
-                默认关闭；开启后每个原邮箱生成随机 6 位英文别名
+                {t('默认关闭；开启后每个原邮箱生成随机 6 位英文别名', 'Off by default; when enabled, each original mailbox generates a random 6-letter English alias')}
               </Typography.Text>
             </Space>
             {aliasSplitEnabled ? (
               <Space align="center" wrap>
-                <Typography.Text>每个原邮箱裂变数量</Typography.Text>
+                <Typography.Text>{t('每个原邮箱裂变数量', 'Aliases per mailbox')}</Typography.Text>
                 <InputNumber
                   min={1}
                   max={5}
                   value={aliasSplitCount}
                   onChange={(value) => setAliasSplitCount(Math.max(1, Math.min(5, Number(value || 5))))}
                 />
-                <Typography.Text type="secondary">（1~5）</Typography.Text>
-                <Typography.Text style={{ marginLeft: 16 }}>包含原邮箱</Typography.Text>
+                <Typography.Text type="secondary">{t('（1~5）', '(1~5)')}</Typography.Text>
+                <Typography.Text style={{ marginLeft: 16 }}>{t('包含原邮箱', 'Include original mailbox')}</Typography.Text>
                 <Switch checked={aliasIncludeOriginal} onChange={setAliasIncludeOriginal} />
               </Space>
             ) : null}
@@ -691,14 +693,14 @@ export default function MailImportPanel({ form }: MailImportPanelProps) {
               setResult(null)
             }}
           >
-            清空
+            {t('清空', 'Clear')}
           </Button>
           <Space>
             <Button onClick={() => void loadSnapshot(selectedType)} loading={loadingSnapshot}>
-              刷新预览
+              {t('刷新预览', 'Refresh preview')}
             </Button>
             <Button type="primary" onClick={handleImport} loading={importing}>
-              确认导入
+              {t('确认导入', 'Confirm import')}
             </Button>
           </Space>
         </Space>
@@ -717,23 +719,23 @@ export default function MailImportPanel({ form }: MailImportPanelProps) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <Tag color="blue">
             {selectedType === 'applemail'
-              ? `已导入: ${snapshot?.count || 0} 个邮箱`
-              : `当前预览匹配: ${snapshot?.items.length || 0}${rawSnapshot?.truncated ? ` / 总池 ${rawSnapshot?.count || 0}` : ''}`}
+              ? t(`已导入: ${snapshot?.count || 0} 个邮箱`, `Imported: ${snapshot?.count || 0} mailboxes`)
+              : t(`当前预览匹配: ${snapshot?.items.length || 0}${rawSnapshot?.truncated ? ` / 总池 ${rawSnapshot?.count || 0}` : ''}`, `Current preview matches: ${snapshot?.items.length || 0}${rawSnapshot?.truncated ? ` / total ${rawSnapshot?.count || 0}` : ''}`)}
           </Tag>
           {selectedType === 'applemail' && snapshot?.filename ? (
-            <Typography.Text type="secondary">当前文件: {snapshot.filename}</Typography.Text>
+            <Typography.Text type="secondary">{t('当前文件:', 'Current file:')} {snapshot.filename}</Typography.Text>
           ) : null}
           {snapshot?.items?.length ? (
             <Popconfirm
-              title={`确认删除已勾选的 ${selectedRowKeys.length} 个邮箱吗？`}
-              okText="批量删除"
-              cancelText="取消"
+              title={t(`确认删除已勾选的 ${selectedRowKeys.length} 个邮箱吗？`, `Delete the ${selectedRowKeys.length} selected mailboxes?`)}
+              okText={t('批量删除', 'Batch delete')}
+              cancelText={t('取消', 'Cancel')}
               okButtonProps={{ danger: true, loading: batchDeleting }}
               onConfirm={() => void handleBatchDelete()}
               disabled={!selectedRowKeys.length}
             >
               <Button danger disabled={!selectedRowKeys.length} loading={batchDeleting}>
-                批量删除
+                {t('批量删除', 'Batch delete')}
               </Button>
             </Popconfirm>
           ) : null}
@@ -763,13 +765,13 @@ export default function MailImportPanel({ form }: MailImportPanelProps) {
             }}
           >
             <Typography.Text type="secondary">
-              {selectedProvider?.preview_empty_text || '当前还没有可预览的导入内容。'}
+              {selectedProvider?.preview_empty_text || t('当前还没有可预览的导入内容。', 'No import content available for preview yet.')}
             </Typography.Text>
           </div>
         )}
 
         {snapshot?.truncated ? (
-          <Typography.Text type="secondary">预览只展示前 100 条记录，完整内容以实际存储为准。</Typography.Text>
+          <Typography.Text type="secondary">{t('预览只展示前 100 条记录，完整内容以实际存储为准。', 'Preview only shows the first 100 records; the stored data is authoritative.')}</Typography.Text>
         ) : null}
       </Space>
     </Card>

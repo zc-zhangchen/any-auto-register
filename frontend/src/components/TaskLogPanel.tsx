@@ -3,6 +3,7 @@ import { Button, message, Space, Tag } from 'antd'
 import { CopyOutlined, FastForwardOutlined, StopOutlined } from '@ant-design/icons'
 
 import { API_BASE, apiFetch, getToken } from '@/lib/utils'
+import { useText, useUiLanguage } from '@/lib/uiLanguage'
 
 interface TaskLogPanelProps {
   taskId: string
@@ -38,7 +39,58 @@ function mergeSummary(previous: RegisterSummary, incoming: Partial<RegisterSumma
   })
 }
 
+function translateTaskLogLine(line: string, english: boolean): string {
+  if (!english) return line
+  const replacements: Array<[RegExp, string]> = [
+    [/ChatGPT RT 全新主链路启动/g, 'ChatGPT RT new primary flow started'],
+    [/请求模式:/g, 'Request mode:'],
+    [/实现策略:/g, 'Implementation strategy:'],
+    [/注册状态起点:/g, 'Registration state start:'],
+    [/注册状态推进:/g, 'Registration state progress:'],
+    [/注册状态机参数:/g, 'Registration state machine params:'],
+    [/注册链路/g, 'Registration flow'],
+    [/开始注册第/g, 'Starting registration for the '],
+    [/个账号/g, ' account'],
+    [/1\. 创建邮箱\.\.\./g, '1. Create mailbox...'],
+    [/2\. 执行注册状态机（interrupt 模式：不在注册阶段提交 about_you）\.\.\./g, '2. Run the registration state machine (interrupt mode: do not submit about_you during registration)...'],
+    [/正在创建 custom_provider 邮箱\.\.\./g, 'Creating a custom_provider mailbox...'],
+    [/成功创建邮箱:/g, 'Mailbox created successfully:'],
+    [/邮箱:/g, 'Email:'],
+    [/密码:/g, 'Password:'],
+    [/注册信息:/g, 'Registration info:'],
+    [/生日:/g, 'Birthday:'],
+    [/流程策略:/g, 'Flow strategy:'],
+    [/验证码等待策略:/g, 'OTP wait strategy:'],
+    [/读取 OAuthClient 配置（默认600s）/g, 'Reading OAuthClient config (default 600s)'],
+    [/注册阶段推进到 about_you 后切换到 OAuth 流程继续完成后续步骤/g, 'Advance to about_you, then switch to the OAuth flow to complete the remaining steps'],
+    [/执行注册状态机（interrupt 模式：不在注册阶段提交 about_you）/g, 'Executing the registration state machine (interrupt mode: do not submit about_you during registration)'],
+    [/访问 ChatGPT 首页/g, 'Visiting ChatGPT homepage'],
+    [/获取 CSRF token/g, 'Fetching CSRF token'],
+    [/提交邮箱:/g, 'Submitting email:'],
+    [/获取到 authorize URL/g, 'Authorize URL obtained'],
+    [/访问 authorize URL/g, 'Visiting authorize URL'],
+    [/重定向到:/g, 'Redirected to:'],
+    [/Authorize → /g, 'Authorize → /'],
+    [/全新注册流程/g, 'Fresh registration flow'],
+    [/注册用户:/g, 'Registering user:'],
+    [/Sentinel Browser 启动:/g, 'Sentinel Browser start:'],
+    [/Sentinel Browser 模式:/g, 'Sentinel Browser mode:'],
+    [/RT 注册主链路异常:/g, 'RT registration main flow error:'],
+    [/注册失败:/g, 'Registration failed:'],
+    [/完成: 成功/g, 'Completed: success'],
+    [/完成: 成功/g, 'Completed: success'],
+    [/跳过/g, 'skipped'],
+    [/失败/g, 'failed'],
+    [/成功/g, 'success'],
+    [/正在注册/g, 'Registering'],
+  ]
+
+  return replacements.reduce((acc, [pattern, replacement]) => acc.replace(pattern, replacement), line)
+}
+
 export function TaskLogPanel({ taskId, onDone }: TaskLogPanelProps) {
+  const t = useText()
+  const { language } = useUiLanguage()
   const [lines, setLines] = useState<string[]>([])
   const [summary, setSummary] = useState<RegisterSummary>({ success: 0, registered: 0, total: 0 })
   const [error, setError] = useState('')
@@ -55,9 +107,9 @@ export function TaskLogPanel({ taskId, onDone }: TaskLogPanelProps) {
   const handleCopyAll = async () => {
     try {
       await navigator.clipboard.writeText(lines.join('\n'))
-      message.success('日志已复制')
+      message.success(t('日志已复制', 'Logs copied'))
     } catch {
-      message.error('复制失败')
+      message.error(t('复制失败', 'Copy failed'))
     }
   }
 
@@ -71,11 +123,11 @@ export function TaskLogPanel({ taskId, onDone }: TaskLogPanelProps) {
       const targeted = Number(response.control?.targeted_skip_attempts || 0)
       message.success(
         targeted > 1
-          ? `已发送跳过 ${targeted} 个进行中账号请求`
-          : '已发送跳过当前账号请求',
+          ? t(`已发送跳过 ${targeted} 个进行中账号请求`, `Requested skip for ${targeted} running accounts`)
+          : t('已发送跳过当前账号请求', 'Requested skip for the current account'),
       )
     } catch (error_: unknown) {
-      const detail = error_ instanceof Error ? error_.message : '请求失败'
+      const detail = error_ instanceof Error ? error_.message : t('请求失败', 'Request failed')
       message.error(detail)
     } finally {
       setSkipLoading(false)
@@ -88,9 +140,9 @@ export function TaskLogPanel({ taskId, onDone }: TaskLogPanelProps) {
     try {
       await apiFetch(`/tasks/${taskId}/stop`, { method: 'POST' })
       setStopRequested(true)
-      message.success('已发送停止任务请求，正在停止进行中的线程')
+      message.success(t('已发送停止任务请求，正在停止进行中的线程', 'Requested task stop; running threads are shutting down'))
     } catch (error_: unknown) {
-      const detail = error_ instanceof Error ? error_.message : '请求失败'
+      const detail = error_ instanceof Error ? error_.message : t('请求失败', 'Request failed')
       message.error(detail)
     } finally {
       setStopLoading(false)
@@ -148,7 +200,7 @@ export function TaskLogPanel({ taskId, onDone }: TaskLogPanelProps) {
         }
       } catch (error_: unknown) {
         if (!cancelled) {
-          const detail = error_ instanceof Error ? error_.message : '获取任务快照失败'
+          const detail = error_ instanceof Error ? error_.message : t('获取任务快照失败', 'Failed to fetch task snapshot')
           setError(detail)
         }
       }
@@ -168,12 +220,12 @@ export function TaskLogPanel({ taskId, onDone }: TaskLogPanelProps) {
         })
 
         if (!response.ok) {
-          setError(`日志流连接失败 (${response.status})`)
+          setError(t(`日志流连接失败 (${response.status})`, `Log stream connection failed (${response.status})`))
           return true
         }
 
         if (!response.body) {
-          setError('日志流未返回可读数据')
+          setError(t('日志流未返回可读数据', 'Log stream did not return readable data'))
           return false
         }
 
@@ -244,7 +296,7 @@ export function TaskLogPanel({ taskId, onDone }: TaskLogPanelProps) {
 
         retryCount += 1
         const retryMs = Math.min(baseRetryMs * (2 ** (retryCount - 1)), maxRetryMs)
-        setError(`日志流连接中断，${retryMs / 1000}s 后重试（第 ${retryCount} 次）`)
+        setError(t(`日志流连接中断，${retryMs / 1000}s 后重试（第 ${retryCount} 次）`, `Log stream interrupted, retrying in ${retryMs / 1000}s (attempt ${retryCount})`))
         await sleep(retryMs)
       }
     }
@@ -264,19 +316,19 @@ export function TaskLogPanel({ taskId, onDone }: TaskLogPanelProps) {
 
   const footerText =
     terminalStatus === 'done'
-      ? { text: '注册完成', color: '#10b981' }
+      ? { text: t('注册完成', 'Registration complete'), color: '#10b981' }
       : terminalStatus === 'stopped'
-        ? { text: '任务已停止', color: '#d97706' }
+        ? { text: t('任务已停止', 'Task stopped'), color: '#d97706' }
         : terminalStatus === 'failed'
-          ? { text: '任务失败', color: '#dc2626' }
+          ? { text: t('任务失败', 'Task failed'), color: '#dc2626' }
           : null
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <Space wrap style={{ marginBottom: 8 }}>
-        <Tag color="green">注册成功：{summary.success}</Tag>
-        <Tag color="blue">已注册：{summary.registered}</Tag>
-        <Tag color="default">总共注册：{summary.total}</Tag>
+        <Tag color="green">{t('注册成功', 'Success')}: {summary.success}</Tag>
+        <Tag color="blue">{t('已注册', 'Registered')}: {summary.registered}</Tag>
+        <Tag color="default">{t('总共注册', 'Total')}: {summary.total}</Tag>
       </Space>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -288,7 +340,7 @@ export function TaskLogPanel({ taskId, onDone }: TaskLogPanelProps) {
             loading={skipLoading}
             disabled={isFinished}
           >
-            跳过当前账号
+            {t('跳过当前账号', 'Skip current account')}
           </Button>
           <Button
             size="small"
@@ -298,11 +350,11 @@ export function TaskLogPanel({ taskId, onDone }: TaskLogPanelProps) {
             loading={stopLoading}
             disabled={isFinished}
           >
-            停止任务
+            {t('停止任务', 'Stop task')}
           </Button>
         </Space>
         <Button size="small" icon={<CopyOutlined />} onClick={handleCopyAll} disabled={lines.length === 0}>
-          复制日志
+          {t('复制日志', 'Copy logs')}
         </Button>
       </div>
 
@@ -328,7 +380,7 @@ export function TaskLogPanel({ taskId, onDone }: TaskLogPanelProps) {
           wordBreak: 'break-word',
         }}
       >
-        {lines.length === 0 && !error && <div style={{ color: '#9ca3af' }}>等待日志...</div>}
+        {lines.length === 0 && !error && <div style={{ color: '#9ca3af' }}>{t('等待日志...', 'Waiting for logs...')}</div>}
         {error && <div style={{ color: '#dc2626' }}>{error}</div>}
         {lines.map((line, index) => (
           <div
@@ -345,7 +397,7 @@ export function TaskLogPanel({ taskId, onDone }: TaskLogPanelProps) {
                       : '#1f2937',
             }}
           >
-            {line}
+            {translateTaskLogLine(line, language === 'en')}
           </div>
         ))}
       </div>
