@@ -50,15 +50,15 @@
 
 **Independent Test**：在上游独立验证——无需启动下游服务；用 grok 现有 Account 实例调 adapter 产出 PoolItem，跑 roundtrip + canonical_hash 一致性。
 
-- [ ] T009 [P] [US1] 创建 `core/pools/canonical.py`：实现 `canonical_hash(provider, auth_type, credential, refresh_token=None) -> str` 与 `mask_credential(s) -> str`，对照 data-model.md 附录 A/B 的参考实现
-- [ ] T010 [P] [US1] 创建 `core/pools/schema.py`：用 pydantic v2 实现 `PoolItemSource` / `PoolItem` / `LinesBatch` / `Sub2ApiBatch` / `ImportError` / `ImportResult` 六个模型；`PoolItem.model_config = ConfigDict(extra='allow')`；字段顺序与 JSON tag 与 data-model.md 一对一
-- [ ] T011 [US1] 在 `core/pools/schema.py` 的 `PoolItem` 上加 `@model_validator(mode="after")` 校验 `credential_hash` 必须等于 `canonical_hash(...)`，不匹配抛 `ValueError` 含字段名（依赖 T009 / T010）
-- [ ] T012 [US1] 在 `core/pools/schema.py` 的 `PoolItem` 上加 `@model_validator(mode="after")` 实现 cross-field 校验（auth_type=cookie → credential 必非空；auth_type=oauth → credential/access_token/refresh_token 三选一非空；data-model.md Entity 1 验证规则 1–3）
-- [ ] T013 [P] [US1] 创建 `core/pools/adapters/__init__.py` + `core/pools/adapters/grok_adapter.py`：实现 `to_pool_item(account: GrokAccount, *, task_id: str, registered_at: str, executor: str) -> PoolItem`；只做映射，**不**做 HTTP。作为新平台接入的样板
-- [ ] T014 [P] [US1] 创建 `tests/pools/test_canonical_hash.py`：表驱动测试 10+ 组 `(provider, auth_type, credential, refresh_token)` → 预期 64 hex（10 组里至少含：lowercase 验证、trim 验证、refresh_token fallback、空 credential 报错路径）
-- [ ] T015 [P] [US1] 创建 `tests/pools/test_poolitem_schema.py`：(a) 必填缺失 → ValidationError；(b) auth_type=cookie 但 credential="" → 拒；(c) auth_type=oauth 三 token 全空 → 拒；(d) credential_hash 不匹配 → 拒；(e) meta 嵌套 > 4 层 → 拒；(f) extra 字段保留（forward-compat）
-- [ ] T016 [US1] 创建 `tests/pools/test_golden_samples.py`：(a) 加载 fixture（依赖 T007），对每条 PoolItem 跑 `model_validate(d)` 不抛错；(b) `model_dump()` 后字段集合 = 原 dict 字段集合（除 `_case` 元字段）；(c) 重算 `credential_hash` = 存储值（依赖 T005 已重算的 fixture）
-- [ ] T017 [US1] 在 `tests/pools/test_adapter_grok.py` 用一个 mock GrokAccount 验证 grok_adapter 产出的 PoolItem 通过 schema 校验且 `credential_hash` 由 adapter 自动算出（依赖 T013）
+- [x] T009 [P] [US1] 创建 `core/pools/canonical.py`：实现 `canonical_hash(provider, auth_type, credential, refresh_token=None) -> str` 与 `mask_credential(s) -> str`，对照 data-model.md 附录 A/B 的参考实现
+- [x] T010 [P] [US1] 创建 `core/pools/schema.py`：用 pydantic v2 实现 `PoolItemSource` / `PoolItem` / `LinesBatch` / `Sub2ApiBatch` / `ImportError` / `ImportResult` 六个模型；`PoolItem.model_config = ConfigDict(extra='allow')`；字段顺序与 JSON tag 与 data-model.md 一对一
+- [x] T011 [US1] 在 `core/pools/schema.py` 的 `PoolItem` 上加 `@model_validator(mode="after")` 校验 `credential_hash` 必须等于 `canonical_hash(...)`，不匹配抛 `ValueError` 含字段名（依赖 T009 / T010）
+- [x] T012 [US1] 在 `core/pools/schema.py` 的 `PoolItem` 上加 `@model_validator(mode="after")` 实现 cross-field 校验（auth_type=cookie → credential 必非空；auth_type=oauth → credential/access_token/refresh_token 三选一非空；data-model.md Entity 1 验证规则 1–3）
+- [x] T013 [P] [US1] 创建 `core/pools/adapters/__init__.py` + `core/pools/adapters/grok_adapter.py`：实现 `to_pool_item(account: GrokAccount, *, task_id: str, registered_at: str, executor: str) -> PoolItem`；只做映射，**不**做 HTTP。作为新平台接入的样板
+- [x] T014 [P] [US1] 创建 `tests/pools/test_canonical_hash.py`：表驱动测试 10+ 组 `(provider, auth_type, credential, refresh_token)` → 预期 64 hex（10 组里至少含：lowercase 验证、trim 验证、refresh_token fallback、空 credential 报错路径）
+- [x] T015 [P] [US1] 创建 `tests/pools/test_poolitem_schema.py`：(a) 必填缺失 → ValidationError；(b) auth_type=cookie 但 credential="" → 拒；(c) auth_type=oauth 三 token 全空 → 拒；(d) credential_hash 不匹配 → 拒；(e) meta 嵌套 > 4 层 → 拒；(f) extra 字段保留（forward-compat）
+- [x] T016 [US1] 创建 `tests/pools/test_golden_samples.py`：(a) 加载 fixture（依赖 T007），对每条 PoolItem 跑 `model_validate(d)` 不抛错；(b) `model_dump()` 后字段集合 = 原 dict 字段集合（除 `_case` 元字段）；(c) 重算 `credential_hash` = 存储值（依赖 T005 已重算的 fixture）
+- [x] T017 [US1] 在 `tests/pools/test_adapter_grok.py` 用一个 mock GrokAccount 验证 grok_adapter 产出的 PoolItem 通过 schema 校验且 `credential_hash` 由 adapter 自动算出（依赖 T013）
 
 **完成态**：`pytest -k pools` 全绿；US1 可独立 demo——任何平台插件作者按 grok_adapter 模板可在 30 分钟内实现自己的 adapter（SC-001 验证基础）。
 
