@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://any-auto-register/contracts/import-result.schema.json",
+  "title": "ImportResult",
+  "description": "POST /admin/api/v1/accounts/import 的响应体。封闭错误码枚举见 errors[].code。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["imported", "skipped", "failed"],
+  "properties": {
+    "imported": { "type": "integer", "minimum": 0 },
+    "skipped": { "type": "integer", "minimum": 0 },
+    "failed": { "type": "integer", "minimum": 0 },
+    "request_id": { "type": "string", "maxLength": 64 },
+    "errors": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ImportError" }
+    }
+  },
+  "$defs": {
+    "ImportError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["index", "code", "message"],
+      "properties": {
+        "index": { "type": "integer", "minimum": 0 },
+        "code": {
+          "type": "string",
+          "enum": [
+            "unknown_provider",
+            "missing_required_field",
+            "invalid_credential_format",
+            "invalid_schema_version",
+            "batch_too_large",
+            "expired_credential",
+            "rate_limited",
+            "downstream_unavailable",
+            "internal_error",
+            "forbidden",
+            "unknown"
+          ]
+        },
+        "message": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "field": { "type": "string", "maxLength": 128 }
+      }
+    }
+  }
+}

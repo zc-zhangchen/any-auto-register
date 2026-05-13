@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://any-auto-register/contracts/poolitem-batch.schema.json",
+  "title": "PoolItemBatch",
+  "description": "POST /admin/api/v1/accounts/import 的请求体。两个 format 二选一，不可混合。",
+  "oneOf": [
+    { "$ref": "#/$defs/LinesBatch" },
+    { "$ref": "#/$defs/Sub2ApiBatch" }
+  ],
+  "$defs": {
+    "LinesBatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "provider", "auth_type", "text"],
+      "properties": {
+        "format": { "const": "lines" },
+        "provider": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{1,31}$"
+        },
+        "auth_type": {
+          "type": "string",
+          "enum": ["cookie", "oauth", "apikey"]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "description": "\\n 分隔的 raw credential；解析方 MUST 忽略空行与 # 注释行；展开后行数 MUST <= 500"
+        },
+        "proxy_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "weight": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        }
+      }
+    },
+    "Sub2ApiBatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "accounts"],
+      "properties": {
+        "format": { "const": "sub2api" },
+        "accounts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 500,
+          "items": {
+            "$ref": "poolitem.schema.json"
+          }
+        },
+        "proxy_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "default_weight": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        }
+      }
+    }
+  }
+}

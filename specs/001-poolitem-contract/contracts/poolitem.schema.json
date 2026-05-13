@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://any-auto-register/contracts/poolitem.schema.json",
+  "title": "PoolItem",
+  "description": "上下游账号载荷统一中间表示。SPEC-001 契约本体。任何修改 MUST 与 spec.md 一同 PR。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "provider",
+    "auth_type",
+    "credential_hash",
+    "source"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]*\\.[0-9]+$",
+      "default": "1.0",
+      "description": "MAJOR.MINOR；当前接受 1.x；缺省按 1.0 兜底（向后兼容 register-to-pool 等历史 caller）"
+    },
+    "provider": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{1,31}$",
+      "description": "实际可接受集合由下游 model + factory 注册表决定；本 schema 仅做形态校验"
+    },
+    "auth_type": {
+      "type": "string",
+      "enum": ["cookie", "oauth", "apikey"]
+    },
+    "credential": {
+      "type": "string",
+      "description": "auth_type=oauth 时可为空字符串（依赖 access_token/refresh_token）"
+    },
+    "credential_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256(lower(provider)+'\\n'+lower(auth_type)+'\\n'+trim(credential or refresh_token))"
+    },
+    "access_token": { "type": "string" },
+    "refresh_token": { "type": "string" },
+    "email": {
+      "type": "string",
+      "maxLength": 254
+    },
+    "weight": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10000
+    },
+    "proxy_hint": {
+      "type": "string",
+      "pattern": "^(http|https|socks5)://"
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 UTC；MUST 含 Z 或 +00:00"
+    },
+    "region": {
+      "type": "string",
+      "maxLength": 32
+    },
+    "meta": {
+      "$ref": "#/$defs/MetaObject"
+    },
+    "source": {
+      "$ref": "#/$defs/PoolItemSource"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "auth_type": { "const": "cookie" } }
+      },
+      "then": {
+        "required": ["credential"],
+        "properties": { "credential": { "minLength": 1 } }
+      }
+    },
+    {
+      "if": {
+        "properties": { "auth_type": { "const": "apikey" } }
+      },
+      "then": {
+        "required": ["credential"],
+        "properties": { "credential": { "minLength": 1 } }
+      }
+    },
+    {
+      "if": {
+        "properties": { "auth_type": { "const": "oauth" } }
+      },
+      "then": {
+        "anyOf": [
+          { "required": ["credential"], "properties": { "credential": { "minLength": 1 } } },
+          { "required": ["access_token"], "properties": { "access_token": { "minLength": 1 } } },
+          { "required": ["refresh_token"], "properties": { "refresh_token": { "minLength": 1 } } }
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "PoolItemSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task_id", "registered_at", "executor"],
+      "properties": {
+        "task_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "registered_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "executor": {
+          "type": "string",
+          "enum": ["protocol", "headless", "headed"]
+        },
+        "registrar_version": {
+          "type": "string",
+          "maxLength": 32
+        }
+      }
+    },
+    "MetaObject": {
+      "type": "object",
+      "description": "自由 Map<string, Any>；嵌套深度 ≤ 4；键名 [a-z0-9_.-]；同数组元素同构",
+      "patternProperties": {
+        "^[a-z0-9_.-]+$": {
+          "$ref": "#/$defs/MetaValue"
+        }
+      },
+      "additionalProperties": false
+    },
+    "MetaValue": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "integer" },
+        { "type": "number" },
+        { "type": "boolean" },
+        { "type": "null" },
+        {
+          "type": "array",
+          "items": { "$ref": "#/$defs/MetaValue" }
+        },
+        { "$ref": "#/$defs/MetaObject" }
+      ]
+    }
+  }
+}
