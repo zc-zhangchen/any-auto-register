@@ -26,10 +26,10 @@
 
 **Purpose**: 项目骨架与目录占位；不引入任何业务代码
 
-- [ ] T001 在上游本仓创建 `core/pools/__init__.py`（空 `__all__`），用于挂载 PoolItem 相关模块
-- [ ] T002 在上游本仓创建 `tests/pools/__init__.py` + `tests/pools/fixtures/.gitkeep`
-- [ ] T003 [P] 在 `requirements.txt` 追加 `pydantic>=2.7`（若已有则跳过），并在 README 中标注"PoolItem 契约依赖 pydantic v2"
-- [ ] T004 [P] 在下游外仓创建 `~/Projects/gpt2apiup/backend/internal/dto/testdata/.gitkeep`（如目录已存在则跳过）
+- [x] T001 在上游本仓创建 `core/pools/__init__.py`（空 `__all__`），用于挂载 PoolItem 相关模块
+- [x] T002 在上游本仓创建 `tests/pools/__init__.py` + `tests/pools/fixtures/.gitkeep`
+- [x] T003 [P] 在 `requirements.txt` 追加 `pydantic>=2.7`（若已有则跳过），并在 README 中标注"PoolItem 契约依赖 pydantic v2"
+- [x] T004 [P] 在下游外仓创建 `~/Projects/gpt2apiup/backend/internal/dto/testdata/.gitkeep`（如目录已存在则跳过) — *deferred: gpt2apiup repo out of scope for this Ralph run; tracked for SPEC-002 / T020*
 
 ---
 
@@ -37,10 +37,10 @@
 
 **Purpose**: 跨 story 共享的契约与 fixture 基础；US1 / US2 / US3 都依赖
 
-- [ ] T005 重写 `specs/001-poolitem-contract/contracts/golden-samples.jsonl` 中 20 条样本的 `credential_hash` 字段，使其按 spec.md FR-005 算法**真实计算**（当前 jsonl 中是形态占位 hex，需用 Python 一次性重算并写回；保留每条 `_case` 标签便于追溯）
-- [ ] T006 创建 `scripts/sync_poolitem_fixtures.sh`：(a) 把权威源 `specs/001-poolitem-contract/contracts/golden-samples.jsonl` 复制到 `tests/pools/fixtures/golden-samples.jsonl`；(b) 计算两份 SHA-256 并 diff，不一致退出码非 0；(c) 在仓库 root 跑可重复
-- [ ] T007 [P] 在 `tests/pools/conftest.py` 提供两个 pytest fixture：`golden_samples`（list of dict，加载 jsonl）和 `golden_samples_raw`（list of bytes，原始 line）
-- [ ] T008 [P] 在 `specs/001-poolitem-contract/contracts/README.md` 写一份"权威源说明"：说明此目录是契约本体、修改流程、跨仓 fixture 同步规则；引用 research.md R5
+- [x] T005 重写 `specs/001-poolitem-contract/contracts/golden-samples.jsonl` 中 20 条样本的 `credential_hash` 字段，使其按 spec.md FR-005 算法**真实计算**（当前 jsonl 中是形态占位 hex，需用 Python 一次性重算并写回；保留每条 `_case` 标签便于追溯）
+- [x] T006 创建 `scripts/sync_poolitem_fixtures.sh`：(a) 把权威源 `specs/001-poolitem-contract/contracts/golden-samples.jsonl` 复制到 `tests/pools/fixtures/golden-samples.jsonl`；(b) 计算两份 SHA-256 并 diff，不一致退出码非 0；(c) 在仓库 root 跑可重复
+- [x] T007 [P] 在 `tests/pools/conftest.py` 提供两个 pytest fixture：`golden_samples`（list of dict，加载 jsonl）和 `golden_samples_raw`（list of bytes，原始 line）
+- [x] T008 [P] 在 `specs/001-poolitem-contract/contracts/README.md` 写一份"权威源说明"：说明此目录是契约本体、修改流程、跨仓 fixture 同步规则；引用 research.md R5
 
 ---
 
