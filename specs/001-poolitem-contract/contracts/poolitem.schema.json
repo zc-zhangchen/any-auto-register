@@ -4,7 +4,7 @@
   "title": "PoolItem",
   "description": "上下游账号载荷统一中间表示。SPEC-001 契约本体。任何修改 MUST 与 spec.md 一同 PR。",
   "type": "object",
-  "additionalProperties": false,
+  "additionalProperties": true,
   "required": [
     "provider",
     "auth_type",
@@ -135,7 +135,7 @@
       "additionalProperties": false
     },
     "MetaValue": {
-      "oneOf": [
+      "anyOf": [
         { "type": "string" },
         { "type": "integer" },
         { "type": "number" },
