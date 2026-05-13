@@ -89,9 +89,9 @@
 
 **Independent Test**：上游 / 下游各自跑一次"v1.0 parser 吃 v1.1 数据"和"v1.1 parser 吃 v1.0 数据"的双向测试；不需要任何业务代码。
 
-- [ ] T024 [P] [US3] 创建 `tests/pools/test_schema_evolution.py`：(a) 用 fixture 第 14 条（`schema_version="1.1"` + `mfa_seed`）→ 当前 v1.0 parser 读入不抛、`__pydantic_extra__` 含 `mfa_seed`；(b) 把 fixture 第 9 条（minimal v1.0）喂给"将来某个 v1.1 字段集"，缺失的新字段取默认 None；(c) 显式 null 与键缺失语义不同的断言（FR-002 守则）
-- [ ] T025 [P] [US3] 创建 `~/Projects/gpt2apiup/backend/internal/dto/schema_evolution_test.go`：对照 T024 用 `map[string]json.RawMessage` 验证未知字段保留；显式 null 与键缺失通过 `_, ok := m["key"]` 区分
-- [ ] T026 [US3] 在 `specs/001-poolitem-contract/contracts/EVOLUTION.md` 记录"PoolItem schema 演进规则"：MAJOR vs MINOR bump 触发条件、向后兼容窗口、deprecation 流程；引用 spec.md FR-013
+- [x] T024 [P] [US3] 创建 `tests/pools/test_schema_evolution.py`：(a) 用 fixture 第 14 条（`schema_version="1.1"` + `mfa_seed`）→ 当前 v1.0 parser 读入不抛、`__pydantic_extra__` 含 `mfa_seed`；(b) 把 fixture 第 9 条（minimal v1.0）喂给"将来某个 v1.1 字段集"，缺失的新字段取默认 None；(c) 显式 null 与键缺失语义不同的断言（FR-002 守则）
+- [ ] T025 [P] [US3] 创建 `~/Projects/gpt2apiup/backend/internal/dto/schema_evolution_test.go`：对照 T024 用 `map[string]json.RawMessage` 验证未知字段保留；显式 null 与键缺失通过 `_, ok := m["key"]` 区分 — *deferred: 跨仓任务，随 SPEC-002 PR 执行*
+- [x] T026 [US3] 在 `specs/001-poolitem-contract/contracts/EVOLUTION.md` 记录"PoolItem schema 演进规则"：MAJOR vs MINOR bump 触发条件、向后兼容窗口、deprecation 流程；引用 spec.md FR-013
 
 **完成态**：演进路径有文档背书 + 双语测试硬证据；为未来 SPEC-002 之后加新 provider 字段时提供可重复的兼容性 playbook。
 
@@ -101,11 +101,11 @@
 
 **Purpose**: CI 集成 / 跨仓文档同步 / 最后一轮 Constitution Check
 
-- [ ] T027 [P] 在仓 root 加 `Makefile` 或 `scripts/check_poolitem_contract.sh` 一键任务：(a) 跑 T006 sync 脚本验 fixture SHA-256；(b) `pytest tests/pools/ -v`；(c) 用 `python-jsonschema` 对 fixture 文件按 `contracts/poolitem.schema.json` 全部校验；任一失败退出非 0
-- [ ] T028 [P] 同步下游 API 文档：在 `~/Projects/gpt2apiup/docs/04-API规范.md` 的 `/admin/api/v1/accounts/import` 节追加 `format=sub2api` 请求样本 + 11 项错误码表（取自 spec.md FR-008）；本文件改动随 SPEC-002 的 PR 合并，不在 SPEC-001 自己的 PR 内 commit
-- [ ] T029 [P] 在 `core/pools/__init__.py` 显式 export 公共 API：`PoolItem` / `PoolItemSource` / `LinesBatch` / `Sub2ApiBatch` / `ImportResult` / `ImportError` / `canonical_hash` / `mask_credential`；并在文件头 docstring 链接到 `specs/001-poolitem-contract/`
-- [ ] T030 跑 quickstart.md Done 自检 7 项 checklist 全部通过；把结果贴到 PR description（按 spec.md Constitution Check 表格式）
-- [ ] T031 在 PR description 中填 Constitution Check：6 条原则逐项标 PASS / JUSTIFIED；不允许任何 VIOLATION
+- [x] T027 [P] 在仓 root 加 `Makefile` 或 `scripts/check_poolitem_contract.sh` 一键任务：(a) 跑 T006 sync 脚本验 fixture SHA-256；(b) `pytest tests/pools/ -v`；(c) 用 `python-jsonschema` 对 fixture 文件按 `contracts/poolitem.schema.json` 全部校验；任一失败退出非 0
+- [ ] T028 [P] 同步下游 API 文档：在 `~/Projects/gpt2apiup/docs/04-API规范.md` 的 `/admin/api/v1/accounts/import` 节追加 `format=sub2api` 请求样本 + 11 项错误码表（取自 spec.md FR-008）；本文件改动随 SPEC-002 的 PR 合并，不在 SPEC-001 自己的 PR 内 commit — *deferred: 跨仓任务，随 SPEC-002 PR 执行*
+- [x] T029 [P] 在 `core/pools/__init__.py` 显式 export 公共 API：`PoolItem` / `PoolItemSource` / `LinesBatch` / `Sub2ApiBatch` / `ImportResult` / `ImportError` / `canonical_hash` / `mask_credential`；并在文件头 docstring 链接到 `specs/001-poolitem-contract/`
+- [x] T030 跑 quickstart.md Done 自检 7 项 checklist 全部通过；把结果贴到 PR description（按 spec.md Constitution Check 表格式） — 见 `specs/001-poolitem-contract/PR-NOTES.md`（5/7 ✅，2 项跨仓 deferred）
+- [x] T031 在 PR description 中填 Constitution Check：6 条原则逐项标 PASS / JUSTIFIED；不允许任何 VIOLATION — 见 `PR-NOTES.md`（6 项全部 PASS 或 JUSTIFIED，0 VIOLATION）
 
 ---
 
