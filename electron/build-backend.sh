@@ -58,6 +58,14 @@ if [ -x "$BUILD_VENV/bin/python" ] && ! "$BUILD_VENV/bin/python" -c 'import sys;
   rm -rf "$BUILD_VENV"
 fi
 
+if [ -x "$BUILD_VENV/bin/python" ]; then
+  VENV_VERSION="$("$BUILD_VENV/bin/python" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+  if [ "$VENV_VERSION" != "$PYTHON_VERSION" ]; then
+    echo "[2/4] 已有打包虚拟环境 Python 为 $VENV_VERSION，与当前 $PYTHON_VERSION 不一致，正在重建..."
+    rm -rf "$BUILD_VENV"
+  fi
+fi
+
 if [ ! -x "$BUILD_VENV/bin/python" ]; then
   echo "[2/4] 创建打包虚拟环境..."
   "$PYTHON_BIN" -m venv "$BUILD_VENV"
