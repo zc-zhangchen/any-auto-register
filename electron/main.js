@@ -2,6 +2,7 @@ const { app, BrowserWindow, dialog } = require('electron')
 const { spawn } = require('child_process')
 const path = require('path')
 const http = require('http')
+const fs = require('fs')
 
 const PORT = 8000
 const isDev = !app.isPackaged
@@ -15,7 +16,7 @@ function getBackendPath() {
   }
   // 生产模式：PyInstaller 打包的可执行文件放在 resources/backend/
   const ext = process.platform === 'win32' ? '.exe' : ''
-  return path.join(process.resourcesPath, 'backend', 'backend', `backend${ext}`)
+  return path.join(process.resourcesPath, 'backend', `backend${ext}`)
 }
 
 function startBackend() {
@@ -27,8 +28,12 @@ function startBackend() {
   const backendPath = getBackendPath()
   console.log('[backend] 启动:', backendPath)
 
+  if (!fs.existsSync(backendPath)) {
+    throw new Error(`后端可执行文件不存在: ${backendPath}`)
+  }
+
   backendProcess = spawn(backendPath, [], {
-    cwd: path.join(process.resourcesPath, 'backend', 'backend'),
+    cwd: path.join(process.resourcesPath, 'backend'),
     env: { ...process.env, PORT: String(PORT) },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -38,6 +43,10 @@ function startBackend() {
 
   backendProcess.on('exit', (code) => {
     console.warn('[backend] 进程退出，code:', code)
+  })
+
+  backendProcess.on('error', (err) => {
+    console.error('[backend] 启动失败:', err)
   })
 }
 
@@ -72,7 +81,13 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
-  startBackend()
+  try {
+    startBackend()
+  } catch (err) {
+    dialog.showErrorBox('启动失败', err.message)
+    app.quit()
+    return
+  }
 
   try {
     await waitForBackend()
