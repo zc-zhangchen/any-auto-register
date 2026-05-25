@@ -5,6 +5,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BACKEND_DIR="$SCRIPT_DIR/../"
 PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || true)}"
+BUILD_VENV="${BUILD_VENV:-$BACKEND_DIR/.venv-build}"
 
 find_working_npm() {
   if [ -n "$NPM_BIN" ] && "$NPM_BIN" --version >/dev/null 2>&1; then
@@ -45,11 +46,22 @@ else
   echo "[1/4] 前端静态文件已存在，跳过构建。"
 fi
 
-echo "[2/4] 安装 PyInstaller..."
-"$PYTHON_BIN" -m pip install pyinstaller --quiet
+if [ ! -x "$BUILD_VENV/bin/python" ]; then
+  echo "[2/4] 创建打包虚拟环境..."
+  "$PYTHON_BIN" -m venv "$BUILD_VENV"
+else
+  echo "[2/4] 使用已有打包虚拟环境。"
+fi
 
-echo "[3/4] 打包后端..."
-"$PYTHON_BIN" -m PyInstaller --onefile --name backend \
+VENV_PYTHON="$BUILD_VENV/bin/python"
+echo "使用打包 Python: $VENV_PYTHON"
+
+echo "[3/5] 安装后端依赖..."
+PYTHONNOUSERSITE=1 "$VENV_PYTHON" -m pip install --upgrade pip setuptools wheel --quiet
+PYTHONNOUSERSITE=1 "$VENV_PYTHON" -m pip install -r requirements.txt pyinstaller --quiet
+
+echo "[4/5] 打包后端..."
+PYTHONNOUSERSITE=1 "$VENV_PYTHON" -m PyInstaller --clean --onefile --name backend \
   --add-data "platforms:platforms" \
   --add-data "core:core" \
   --add-data "api:api" \
@@ -57,7 +69,7 @@ echo "[3/4] 打包后端..."
   --add-data "static:static" \
   main.py
 
-echo "[4/4] 复制产物到 electron/backend/"
+echo "[5/5] 复制产物到 electron/backend/"
 mkdir -p "$SCRIPT_DIR/backend"
 cp dist/backend* "$SCRIPT_DIR/backend/"
 
