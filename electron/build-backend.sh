@@ -4,14 +4,22 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BACKEND_DIR="$SCRIPT_DIR/../"
+PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || true)}"
+
+if [ -z "$PYTHON_BIN" ]; then
+  echo "错误: 未找到 python3，请先安装 Python 3.10+。"
+  exit 1
+fi
 
 cd "$BACKEND_DIR"
 
+echo "使用 Python: $PYTHON_BIN"
+
 echo "[1/3] 安装 PyInstaller..."
-pip install pyinstaller --quiet
+"$PYTHON_BIN" -m pip install pyinstaller --quiet
 
 echo "[2/3] 打包后端..."
-pyinstaller --onefile --name backend \
+"$PYTHON_BIN" -m PyInstaller --onefile --name backend \
   --add-data "platforms:platforms" \
   --add-data "core:core" \
   --add-data "api:api" \
