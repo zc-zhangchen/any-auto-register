@@ -5,6 +5,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BACKEND_DIR="$SCRIPT_DIR/../"
 PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || true)}"
+NPM_BIN="${NPM_BIN:-$(command -v npm || true)}"
 
 if [ -z "$PYTHON_BIN" ]; then
   echo "错误: 未找到 python3，请先安装 Python 3.10+。"
@@ -15,10 +16,21 @@ cd "$BACKEND_DIR"
 
 echo "使用 Python: $PYTHON_BIN"
 
-echo "[1/3] 安装 PyInstaller..."
+if [ ! -f "$BACKEND_DIR/static/index.html" ]; then
+  if [ -z "$NPM_BIN" ]; then
+    echo "错误: 未找到 npm，且 static/index.html 不存在，无法构建前端静态文件。"
+    exit 1
+  fi
+  echo "[1/4] 构建前端静态文件..."
+  (cd "$BACKEND_DIR/frontend" && "$NPM_BIN" install && "$NPM_BIN" run build)
+else
+  echo "[1/4] 前端静态文件已存在，跳过构建。"
+fi
+
+echo "[2/4] 安装 PyInstaller..."
 "$PYTHON_BIN" -m pip install pyinstaller --quiet
 
-echo "[2/3] 打包后端..."
+echo "[3/4] 打包后端..."
 "$PYTHON_BIN" -m PyInstaller --onefile --name backend \
   --add-data "platforms:platforms" \
   --add-data "core:core" \
@@ -27,7 +39,7 @@ echo "[2/3] 打包后端..."
   --add-data "static:static" \
   main.py
 
-echo "[3/3] 复制产物到 electron/backend/"
+echo "[4/4] 复制产物到 electron/backend/"
 mkdir -p "$SCRIPT_DIR/backend"
 cp dist/backend* "$SCRIPT_DIR/backend/"
 
