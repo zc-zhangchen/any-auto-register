@@ -27,6 +27,14 @@ function getBackendPath() {
   return path.join(process.resourcesPath, 'backend', `backend${ext}`)
 }
 
+function getBackendLogPath() {
+  const logDir = process.platform === 'darwin'
+    ? path.join(app.getPath('home'), 'Library', 'Logs', 'Any Auto Register')
+    : app.getPath('userData')
+  fs.mkdirSync(logDir, { recursive: true })
+  return path.join(logDir, 'backend.log')
+}
+
 function startBackend() {
   if (isDev) {
     console.log('[dev] 请先在项目根目录运行 start_backend.bat 或 start_backend.ps1')
@@ -34,7 +42,7 @@ function startBackend() {
   }
 
   const backendPath = getBackendPath()
-  const logPath = path.join(app.getPath('userData'), 'backend.log')
+  const logPath = getBackendLogPath()
   backendLogStream = fs.createWriteStream(logPath, { flags: 'a' })
   writeBackendLog(`[backend] 日志文件: ${logPath}`)
   writeBackendLog(`[backend] 启动: ${backendPath}`)
@@ -63,14 +71,15 @@ function startBackend() {
 
 function waitForBackend(retries = BACKEND_WAIT_RETRIES) {
   return new Promise((resolve, reject) => {
+    const logPath = getBackendLogPath()
     const attempt = (n) => {
       http.get(`http://localhost:${PORT}/api/platforms`, (res) => {
         if (res.statusCode < 500) resolve()
         else if (n > 0) setTimeout(() => attempt(n - 1), 1000)
-        else reject(new Error(`后端启动超时，请查看日志: ${path.join(app.getPath('userData'), 'backend.log')}`))
+        else reject(new Error(`后端启动超时，请查看日志: ${logPath}`))
       }).on('error', () => {
         if (n > 0) setTimeout(() => attempt(n - 1), 1000)
-        else reject(new Error(`后端启动超时，请查看日志: ${path.join(app.getPath('userData'), 'backend.log')}`))
+        else reject(new Error(`后端启动超时，请查看日志: ${logPath}`))
       })
     }
     attempt(retries)
