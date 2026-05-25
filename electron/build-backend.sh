@@ -28,9 +28,16 @@ if [ -z "$PYTHON_BIN" ]; then
   exit 1
 fi
 
+PYTHON_VERSION="$("$PYTHON_BIN" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+if ! "$PYTHON_BIN" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)'; then
+  echo "错误: 当前 Python 为 $PYTHON_VERSION，但后端代码需要 Python 3.10+。"
+  echo "请安装 Python 3.10+，或用 PYTHON_BIN=/path/to/python3.10 bash build-backend.sh 指定。"
+  exit 1
+fi
+
 cd "$BACKEND_DIR"
 
-echo "使用 Python: $PYTHON_BIN"
+echo "使用 Python: $PYTHON_BIN ($PYTHON_VERSION)"
 
 if [ ! -f "$BACKEND_DIR/static/index.html" ]; then
   NPM_BIN="$(find_working_npm || true)"
@@ -44,6 +51,11 @@ if [ ! -f "$BACKEND_DIR/static/index.html" ]; then
   (cd "$BACKEND_DIR/frontend" && "$NPM_BIN" install && "$NPM_BIN" run build)
 else
   echo "[1/4] 前端静态文件已存在，跳过构建。"
+fi
+
+if [ -x "$BUILD_VENV/bin/python" ] && ! "$BUILD_VENV/bin/python" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)'; then
+  echo "[2/4] 已有打包虚拟环境低于 Python 3.10，正在重建..."
+  rm -rf "$BUILD_VENV"
 fi
 
 if [ ! -x "$BUILD_VENV/bin/python" ]; then
