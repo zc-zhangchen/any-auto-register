@@ -679,11 +679,23 @@ class KiroRegister:
                 proxies = build_requests_proxy_config(self.proxy)
                 if proxies:
                     kwargs["proxies"] = proxies
-            response = cffi_requests.post(url, **kwargs)
+            try:
+                response = cffi_requests.post(url, **kwargs)
+            except Exception as exc:
+                if self._should_retry_oidc_without_proxy(url, exc):
+                    response = self._retry_oidc_without_proxy(url, kwargs, exc)
+                else:
+                    raise
             if response.status_code != 200:
-                raise RuntimeError(
-                    f"HTTP {response.status_code}: {response.text[:300]}"
-                )
+                error = RuntimeError(f"HTTP {response.status_code}: {response.text[:300]}")
+                if self._should_retry_oidc_without_proxy(url, error):
+                    response = self._retry_oidc_without_proxy(url, kwargs, error)
+                    if response.status_code != 200:
+                        raise RuntimeError(
+                            f"HTTP {response.status_code}: {response.text[:300]}"
+                        )
+                else:
+                    raise error
             return response.json()
 
         data = json.dumps(payload).encode("utf-8")
@@ -692,6 +704,32 @@ class KiroRegister:
         with opener.open(request, timeout=30) as resp:
             body = resp.read().decode("utf-8")
             return json.loads(body)
+
+    def _should_retry_oidc_without_proxy(self, url: str, exc: Exception) -> bool:
+        if not self.proxy:
+            return False
+        host = urlparse(url).netloc
+        if not re.fullmatch(r"oidc\.[a-z0-9-]+\.amazonaws\.com", host):
+            return False
+        message = str(exc).lower()
+        return any(
+            marker in message
+            for marker in (
+                "proxy responded with non 200 code: 400",
+                "400 bad request",
+                "proxy connect",
+                "proxy",
+                "connect tunnel",
+                "failed to connect to",
+                "could not connect to server",
+            )
+        )
+
+    def _retry_oidc_without_proxy(self, url: str, kwargs: dict[str, Any], exc: Exception):
+        direct_kwargs = dict(kwargs)
+        direct_kwargs.pop("proxies", None)
+        self.log(f"OIDC 代理请求失败，改为直连重试: {str(exc)[:160]}")
+        return cffi_requests.post(url, **direct_kwargs)
 
     def _capture_kiro_web_tokens(self, page: Page):
         if not self._captured_tokens.get(
