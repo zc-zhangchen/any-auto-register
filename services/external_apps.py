@@ -701,7 +701,7 @@ def _ensure_cliproxyapi_runtime_config(repo: Path):
     config_path = repo / "config.local.yaml"
     if not config_path.exists():
         shutil.copyfile(repo / "config.example.yaml", config_path)
-    secret = _get_setting("cliproxyapi_management_key", "cliproxyapi")
+    secret = _get_setting("cliproxyapi_management_key", "islam")
     lines = config_path.read_text(encoding="utf-8").splitlines()
     updated_lines = []
     replaced = False

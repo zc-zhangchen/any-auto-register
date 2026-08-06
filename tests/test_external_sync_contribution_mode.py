@@ -24,6 +24,56 @@ def _config_getter(values: dict[str, str]):
 
 
 class ExternalSyncContributionModeTests(unittest.TestCase):
+    def test_cpa_upload_falls_back_to_cliproxyapi_defaults_when_cpa_config_is_blank(self):
+        account = DummyAccount(
+            extra={
+                "access_token": "at-token",
+                "refresh_token": "rt-token",
+                "id_token": "id-token",
+            }
+        )
+        response = mock.Mock()
+        response.status_code = 200
+        response.json.return_value = {"message": "ok"}
+
+        cfg = {
+            "cpa_api_url": "",
+            "cpa_api_key": "",
+            "cliproxyapi_base_url": "http://localhost:8317",
+            "cliproxyapi_management_key": "islam",
+        }
+
+        with mock.patch("core.config_store.config_store.get", side_effect=_config_getter(cfg)):
+            with mock.patch("platforms.chatgpt.cpa_upload.cffi_requests.post", return_value=response) as post_mock:
+                from platforms.chatgpt.cpa_upload import generate_token_json, upload_to_cpa
+
+                ok, msg = upload_to_cpa(generate_token_json(account))
+
+        self.assertTrue(ok)
+        self.assertEqual(msg, "上传成功")
+        post_mock.assert_called_once()
+        self.assertIn("http://localhost:8317/v0/management/auth-files", post_mock.call_args.args[0])
+
+    def test_cpa_upload_synthesizes_refresh_token_when_account_is_access_token_only(self):
+        account = DummyAccount()
+        account.access_token = "at-token"
+        account.session_token = "session-token"
+        account.id_token = "id-token"
+        response = mock.Mock()
+        response.status_code = 200
+        response.json.return_value = {"message": "ok"}
+
+        with mock.patch("core.config_store.config_store.get", return_value=""):
+            with mock.patch("platforms.chatgpt.cpa_upload.cffi_requests.post", return_value=response) as post_mock:
+                from platforms.chatgpt.cpa_upload import generate_token_json, upload_to_cpa
+
+                payload = generate_token_json(account)
+                ok, msg = upload_to_cpa(payload)
+
+        self.assertTrue(ok)
+        self.assertEqual(msg, "上传成功")
+        self.assertEqual(payload["refresh_token"], "session-token")
+
     def test_contribution_enabled_uploads_only_to_contribution_server(self):
         account = DummyAccount()
         cfg = {

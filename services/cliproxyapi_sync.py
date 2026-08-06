@@ -9,10 +9,14 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+from sqlmodel import Session, select
+
+from core.db import AccountModel, engine
 from platforms.chatgpt.status_probe import CODEX_USER_AGENT, extract_chatgpt_account_id
 from services.chatgpt_account_state import is_account_deactivated_message
 
 DEFAULT_CLIPROXYAPI_BASE_URL = "http://127.0.0.1:8317"
+DEFAULT_CLIPROXYAPI_MANAGEMENT_KEY = "islam"
 SYNC_RETRY_ATTEMPTS = 3
 SYNC_RETRY_DELAY_SECONDS = 0.4
 BATCH_PROBE_DELAY_SECONDS = 0.12
@@ -39,7 +43,7 @@ def _base_url(api_url: str | None = None) -> str:
 
 
 def _api_key(api_key: str | None = None) -> str:
-    return str(api_key or _get_config_value("cliproxyapi_management_key", "cliproxyapi") or "cliproxyapi").strip()
+    return str(api_key or _get_config_value("cliproxyapi_management_key", DEFAULT_CLIPROXYAPI_MANAGEMENT_KEY) or DEFAULT_CLIPROXYAPI_MANAGEMENT_KEY).strip()
 
 
 def _headers(api_key: str | None = None) -> dict[str, str]:
@@ -179,18 +183,131 @@ def _status_rank(status: str) -> int:
     return order.get(str(status or "").strip().lower(), 9)
 
 
+def _normalized_name_candidates(value: str) -> set[str]:
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return set()
+    candidates = {raw}
+    if "." in raw:
+        stem = raw.rsplit(".", 1)[0].strip().lower()
+        if stem:
+            candidates.add(stem)
+    return candidates
+
+
+def _get_account_value(account: Any, *names: str, default: str = "") -> str:
+    for name in names:
+        value = getattr(account, name, "")
+        if str(value or "").strip():
+            return str(value).strip()
+    return default
+
+
+def _load_local_chatgpt_account(account: Any) -> AccountModel | None:
+    account_id = getattr(account, "id", None)
+    email = str(getattr(account, "email", "") or "").strip()
+    user_id = str(getattr(account, "user_id", "") or "").strip()
+
+    try:
+        with Session(engine) as session:
+            if account_id is not None:
+                try:
+                    row = session.get(AccountModel, int(account_id))
+                except Exception:
+                    row = None
+                if row and str(row.platform or "").strip().lower() == "chatgpt":
+                    return row
+
+            if email:
+                row = session.exec(
+                    select(AccountModel)
+                    .where(AccountModel.platform == "chatgpt")
+                    .where(AccountModel.email == email)
+                ).first()
+                if row:
+                    return row
+
+            if user_id:
+                row = session.exec(
+                    select(AccountModel)
+                    .where(AccountModel.platform == "chatgpt")
+                    .where(AccountModel.user_id == user_id)
+                ).first()
+                if row:
+                    return row
+    except Exception:
+        return None
+    return None
+
+
+def _resolve_seed_account(account: Any) -> Any:
+    access_token = _get_account_value(account, "access_token", "token", default="")
+    email = str(getattr(account, "email", "") or "").strip()
+    if access_token and email:
+        return account
+
+    local_row = _load_local_chatgpt_account(account)
+    if not local_row:
+        return account
+
+    class _SeedAccount:
+        pass
+
+    extra = local_row.get_extra()
+    resolved = _SeedAccount()
+    resolved.id = local_row.id
+    resolved.email = local_row.email
+    resolved.user_id = local_row.user_id
+    resolved.platform = local_row.platform
+    resolved.password = local_row.password
+    resolved.token = local_row.token
+    resolved.extra = extra
+    resolved.access_token = extra.get("access_token") or local_row.token or _get_account_value(account, "access_token", "token", default="")
+    resolved.refresh_token = extra.get("refresh_token") or _get_account_value(account, "refresh_token", default="")
+    resolved.id_token = extra.get("id_token") or _get_account_value(account, "id_token", default="")
+    resolved.session_token = extra.get("session_token") or _get_account_value(account, "session_token", default="")
+    resolved.client_id = extra.get("client_id") or _get_account_value(account, "client_id", default="app_EMoamEEZ73f0CkXaXp7hrann")
+    resolved.cookies = extra.get("cookies") or _get_account_value(account, "cookies", default="")
+    return resolved
+
+
 def _match_auth_file(account: Any, files: list[dict[str, Any]]) -> dict[str, Any] | None:
     email = str(getattr(account, "email", "") or "").strip().lower()
-    if not email:
+    user_id = str(getattr(account, "user_id", "") or "").strip().lower()
+    email_local = email.split("@", 1)[0].strip().lower() if email else ""
+    if not email and not user_id:
         return None
     candidates = []
     for item in files:
         provider = str(item.get("provider") or item.get("type") or "").strip().lower()
         item_email = str(item.get("email") or "").strip().lower()
         item_name = str(item.get("name") or "").strip().lower()
+        item_user_id = str(
+            item.get("user_id")
+            or item.get("userId")
+            or item.get("chatgpt_user_id")
+            or ""
+        ).strip().lower()
+        item_auth_index = str(item.get("auth_index") or "").strip().lower()
         if provider != "codex":
             continue
-        if item_email == email or item_name == f"{email}.json":
+        name_candidates = _normalized_name_candidates(item_name)
+        if (
+            item_email == email
+            or item_email == email_local
+            or item_email == user_id
+            or item_email == f"{email_local}.json"
+            or item_name == email
+            or item_name == f"{email}.json"
+            or item_name == f"{email_local}.json"
+            or item_name == user_id
+            or item_name == f"{user_id}.json"
+            or email in name_candidates
+            or email_local in name_candidates
+            or user_id in name_candidates
+            or item_user_id == user_id
+            or (item_auth_index and item_auth_index == user_id)
+        ):
             candidates.append(item)
     if not candidates:
         return None
@@ -202,6 +319,97 @@ def _match_auth_file(account: Any, files: list[dict[str, Any]]) -> dict[str, Any
         reverse=False,
     )
     return candidates[0]
+
+
+def _seed_auth_file_from_account(account: Any, *, api_url: str | None = None, api_key: str | None = None) -> tuple[bool, str]:
+    seed_account = _resolve_seed_account(account)
+    access_token = str(
+        getattr(seed_account, "access_token", "")
+        or getattr(seed_account, "token", "")
+        or ""
+    ).strip()
+    email = str(getattr(seed_account, "email", "") or "").strip()
+    if not access_token or not email:
+        return False, "账号缺少 access_token 或 email，无法自动创建远端 auth-file"
+
+    from platforms.chatgpt.cpa_upload import generate_token_json, upload_to_cpa
+
+    return upload_to_cpa(generate_token_json(seed_account), api_url=api_url, api_key=api_key)
+
+
+def _wait_for_matching_auth_file(
+    account: Any,
+    *,
+    api_url: str | None = None,
+    api_key: str | None = None,
+    attempts: int = 5,
+    delay_seconds: float = 0.4,
+) -> dict[str, Any] | None:
+    last_files: list[dict[str, Any]] = []
+    for attempt in range(1, max(1, attempts) + 1):
+        files = _retry_sync_call(lambda: list_auth_files(api_url=api_url, api_key=api_key))
+        last_files = files
+        matched = _match_auth_file(account, files)
+        if matched:
+            return matched
+        if attempt < attempts:
+            time.sleep(delay_seconds)
+    return _match_auth_file(account, last_files)
+
+
+def _sync_remote_auth_result(
+    account: Any,
+    files: list[dict[str, Any]],
+    synced_at: str,
+    *,
+    api_url: str | None = None,
+    api_key: str | None = None,
+) -> dict[str, Any]:
+    matched = _match_auth_file(account, files)
+    if matched:
+        return _build_remote_sync_result(account, matched, synced_at, api_url=api_url, api_key=api_key)
+
+    try:
+        seeded_ok, seeded_msg = _seed_auth_file_from_account(account, api_url=api_url, api_key=api_key)
+    except Exception as exc:
+        seeded_ok, seeded_msg = False, str(exc)
+    if seeded_ok:
+        try:
+            matched = _wait_for_matching_auth_file(account, api_url=api_url, api_key=api_key)
+        except Exception as exc:
+            return {
+                "uploaded": True,
+                "last_synced_at": synced_at,
+                "message": f"{seeded_msg}；{str(exc)}",
+                "remote_state": "pending_index",
+                "base_url": _base_url(api_url),
+                "seeded": True,
+            }
+        if matched:
+            seeded_result = _build_remote_sync_result(account, matched, synced_at, api_url=api_url, api_key=api_key)
+            if not str(seeded_result.get("message") or "").strip():
+                seeded_result["message"] = seeded_msg
+            else:
+                seeded_result["message"] = f"{seeded_result['message']}；{seeded_msg}"
+            seeded_result["seeded"] = True
+            return seeded_result
+        return {
+            "uploaded": True,
+            "last_synced_at": synced_at,
+            "message": f"{seeded_msg}；已上传到 CLIProxyAPI，但远端索引尚未刷新",
+            "remote_state": "pending_index",
+            "base_url": _base_url(api_url),
+            "seeded": True,
+        }
+    if seeded_msg:
+        return {
+            "uploaded": False,
+            "last_synced_at": synced_at,
+            "message": seeded_msg,
+            "remote_state": "not_found",
+            "base_url": _base_url(api_url),
+        }
+    return _build_remote_sync_result(account, None, synced_at, api_url=api_url, api_key=api_key)
 
 
 def _probe_remote_auth(auth_index: str, account_id: str, *, api_url: str | None = None, api_key: str | None = None) -> dict[str, Any]:
@@ -347,8 +555,7 @@ def sync_chatgpt_cliproxyapi_status(
             "remote_state": "unreachable",
             "base_url": _base_url(api_url),
         }
-    matched = _match_auth_file(account, files)
-    return _build_remote_sync_result(account, matched, synced_at, api_url=api_url, api_key=api_key)
+    return _sync_remote_auth_result(account, files, synced_at, api_url=api_url, api_key=api_key)
 
 
 def sync_chatgpt_cliproxyapi_status_batch(
@@ -383,9 +590,9 @@ def sync_chatgpt_cliproxyapi_status_batch(
         account_id = getattr(account, "id", None)
         if account_id is None:
             continue
-        matched = _match_auth_file(account, files)
-        results[int(account_id)] = _build_remote_sync_result(account, matched, synced_at, api_url=api_url, api_key=api_key)
-        if index < len(accounts) - 1 and matched:
+        result = _sync_remote_auth_result(account, files, synced_at, api_url=api_url, api_key=api_key)
+        results[int(account_id)] = result
+        if index < len(accounts) - 1 and str(result.get("remote_state") or "").strip().lower() not in {"unreachable", "not_found"}:
             time.sleep(BATCH_PROBE_DELAY_SECONDS)
 
     unreachable = sum(1 for item in results.values() if str(item.get("remote_state") or "").strip().lower() == "unreachable")
