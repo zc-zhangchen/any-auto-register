@@ -102,6 +102,13 @@ export default function RegisterTaskPage() {
         smstome_otp_timeout_seconds: cfg.smstome_otp_timeout_seconds || '',
         smstome_poll_interval_seconds: cfg.smstome_poll_interval_seconds || '',
         smstome_sync_max_pages_per_country: cfg.smstome_sync_max_pages_per_country || '',
+        hero_sms_api_key: cfg.hero_sms_api_key || '',
+        hero_sms_service: cfg.hero_sms_service || '',
+        hero_sms_country: cfg.hero_sms_country || '',
+        hero_sms_max_price: cfg.hero_sms_max_price || '',
+        hero_sms_phone_attempts: cfg.hero_sms_phone_attempts || '',
+        hero_sms_otp_timeout_seconds: cfg.hero_sms_otp_timeout_seconds || '',
+        hero_sms_poll_interval_seconds: cfg.hero_sms_poll_interval_seconds || '',
         luckmail_base_url: cfg.luckmail_base_url || 'https://mails.luckyous.com/',
         luckmail_api_key: cfg.luckmail_api_key || '',
         luckmail_email_type: cfg.luckmail_email_type || '',
@@ -166,6 +173,13 @@ export default function RegisterTaskPage() {
       smstome_otp_timeout_seconds: values.smstome_otp_timeout_seconds,
       smstome_poll_interval_seconds: values.smstome_poll_interval_seconds,
       smstome_sync_max_pages_per_country: values.smstome_sync_max_pages_per_country,
+      hero_sms_api_key: values.hero_sms_api_key,
+      hero_sms_service: values.hero_sms_service,
+      hero_sms_country: values.hero_sms_country,
+      hero_sms_max_price: values.hero_sms_max_price,
+      hero_sms_phone_attempts: values.hero_sms_phone_attempts,
+      hero_sms_otp_timeout_seconds: values.hero_sms_otp_timeout_seconds,
+      hero_sms_poll_interval_seconds: values.hero_sms_poll_interval_seconds,
       luckmail_base_url: values.luckmail_base_url,
       luckmail_api_key: values.luckmail_api_key,
       luckmail_email_type: values.luckmail_email_type,
@@ -586,6 +600,33 @@ export default function RegisterTaskPage() {
             </Form.Item>
             <Form.Item name="smstome_sync_max_pages_per_country" label="每国同步页数">
               <Input placeholder="5" />
+            </Form.Item>
+            <Text type="secondary" style={{ display: 'block', marginBottom: 12, marginTop: 16 }}>
+              HeroSMS 付费接码平台（配置 API Key 后优先使用）
+            </Text>
+            <Form.Item name="hero_sms_api_key" label="HeroSMS API Key">
+              <Input.Password placeholder="hero-sms.com 的 API 密钥" />
+            </Form.Item>
+            <Form.Item name="hero_sms_service" label="服务代码">
+              <Input placeholder="dr (OpenAI)" />
+            </Form.Item>
+            <Form.Item name="hero_sms_country" label="国家代码">
+              <Input placeholder="0 (任意国家)" />
+            </Form.Item>
+            <Form.Item name="hero_sms_max_price" label="最高单价">
+              <Input placeholder="不限制" />
+            </Form.Item>
+            <Form.Item name="hero_sms_phone_attempts" label="尝试次数">
+              <Input placeholder="3" />
+            </Form.Item>
+            <Form.Item name="hero_sms_otp_timeout_seconds" label="短信等待秒数">
+              <Input placeholder="120" />
+            </Form.Item>
+            <Form.Item name="hero_sms_poll_interval_seconds" label="轮询间隔秒数">
+              <Input placeholder="5" />
+            </Form.Item>
+            <Form.Item name="hero_sms_reuse_number" label="号码复用（20分钟内）">
+              <Input placeholder="0 (关闭) / 1 (开启)" />
             </Form.Item>
           </Card>
         )}

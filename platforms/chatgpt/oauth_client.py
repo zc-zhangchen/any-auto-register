@@ -16,7 +16,7 @@ try:
 except ImportError:
     import requests as curl_requests
 
-from .phone_service import SMSToMePhoneService
+from .phone_service import SMSToMePhoneService, HeroSmsPhoneService
 from .utils import (
     FlowState,
     build_browser_headers,
@@ -1228,7 +1228,7 @@ class OAuthClient:
         sec_ch_ua=None,
         impersonate=None,
         skymail_client=None,
-        allow_phone_verification=False,
+        allow_phone_verification=True,
         signup_source="",
     ):
         """完成 OAuth 单链注册并换取 refresh token。"""
@@ -2820,10 +2820,19 @@ class OAuthClient:
             )
             return None
 
-        phone_service = SMSToMePhoneService(self.config, log_fn=self._log)
-        if not phone_service.enabled:
+        # 优先使用 HeroSMS，如果配置了 api_key
+        hero_service = HeroSmsPhoneService(self.config, log_fn=self._log)
+        smstome_service = SMSToMePhoneService(self.config, log_fn=self._log)
+
+        if hero_service.enabled:
+            phone_service = hero_service
+            self._log("使用 HeroSMS 接码平台")
+        elif smstome_service.enabled:
+            phone_service = smstome_service
+            self._log("使用 SMSToMe 接码平台")
+        else:
             self._set_error(
-                "当前链路需要手机号验证，但未配置可用的手机号能力（SMSToMe 或固定手机号验证码）"
+                "当前链路需要手机号验证，但未配置可用的手机号能力（HeroSMS 或 SMSToMe）"
             )
             return None
 
@@ -2839,7 +2848,7 @@ class OAuthClient:
                 break
 
             if not entry:
-                last_failure = last_failure or "SMSToMe 号码池中无可用手机号"
+                last_failure = last_failure or "接码平台无可用手机号"
                 break
 
             prefix = phone_service.prefix_hint(entry.phone)
@@ -2890,7 +2899,7 @@ class OAuthClient:
             )
 
             if verification_channel != "sms":
-                last_failure = f"add_phone 已切到 {verification_channel} 通道，当前 SMSToMe 仅支持短信接码"
+                last_failure = f"add_phone 已切到 {verification_channel} 通道，当前接码平台仅支持短信接码"
                 self._log(last_failure)
                 excluded_prefixes.add(prefix)
                 continue
@@ -2930,6 +2939,11 @@ class OAuthClient:
                 excluded_prefixes.add(prefix)
                 continue
 
+            # 手机验证成功：释放号码（完成激活+清除跨账号复用缓存）
+            try:
+                phone_service.release_phone()
+            except Exception as exc:
+                self._log(f"释放手机号失败（可忽略）: {exc}")
             return validated_state
 
         self._set_error(f"add_phone 阶段失败: {last_failure or '未完成手机号验证'}")

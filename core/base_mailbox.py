@@ -3154,7 +3154,9 @@ class OutlookImapMailboxBackend(OutlookMailboxBackend):
         **kwargs,
     ) -> str:
         from email import message_from_bytes
+        from email.header import decode_header as _decode_header
         from email.policy import default as email_default_policy
+        from email.utils import parsedate_to_datetime
 
         seen = {str(mid) for mid in (before_ids or set())}
         exclude_codes = {
@@ -3163,6 +3165,10 @@ class OutlookImapMailboxBackend(OutlookMailboxBackend):
             if str(code or "").strip()
         }
         keyword_lower = str(keyword or "").strip().lower()
+        # 记录开始等待的时间，只接受此时间之后的邮件
+        poll_start = time.time()
+        # 目标邮箱地址（含变种），用于过滤共享收件箱中发给其他变种的邮件
+        target_email = str(account.email or "").strip().lower()
 
         def poll_once() -> Optional[str]:
             for folder in self.mailbox._imap_folder_names:
@@ -3219,6 +3225,31 @@ class OutlookImapMailboxBackend(OutlookMailboxBackend):
                             )
                             continue
                         msg = message_from_bytes(raw, policy=email_default_policy)
+                        # 检查邮件时间，跳过早于轮询开始时间的旧邮件
+                        date_str = msg.get("Date", "")
+                        if date_str:
+                            try:
+                                mail_dt = parsedate_to_datetime(date_str)
+                                mail_ts = mail_dt.timestamp()
+                                if mail_ts < poll_start - 60:
+                                    self.mailbox._log(
+                                        f"[微软邮箱][IMAP] folder={folder} 跳过旧邮件: Date={date_str}"
+                                    )
+                                    continue
+                            except Exception:
+                                pass
+                        # 变种邮箱场景：按 To/Delivered-To 头过滤，只接受发给当前变种的邮件
+                        if "+" in target_email.split("@")[0]:
+                            recipient_headers = " ".join([
+                                str(msg.get("To", "")),
+                                str(msg.get("Delivered-To", "")),
+                                str(msg.get("X-Original-To", "")),
+                            ]).lower()
+                            if target_email not in recipient_headers:
+                                self.mailbox._log(
+                                    f"[微软邮箱][IMAP] folder={folder} 跳过非目标收件人邮件: to={msg.get('To', '')}"
+                                )
+                                continue
                         subject = self.mailbox._decode_header_value(msg.get("Subject", ""))
                         text = self.mailbox._extract_message_text(msg)
                         self.mailbox._log(
@@ -4000,6 +4031,10 @@ class OutlookMailbox(BaseMailbox):
         import imaplib
 
         email_addr = str(account.email or "").strip()
+        # 变种邮箱（含+号）IMAP 认证需用原始邮箱
+        if "+" in email_addr.split("@")[0]:
+            local, domain = email_addr.split("@", 1)
+            email_addr = local.split("+")[0] + "@" + domain
         extra = account.extra or {}
         password = str(extra.get("password") or "").strip()
         client_id = str(extra.get("client_id") or "").strip()

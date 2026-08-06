@@ -319,6 +319,20 @@ const TAB_ITEMS = [
           { key: 'smstome_sync_max_pages_per_country', label: '每国同步页数', placeholder: '5' },
         ],
       },
+      {
+        title: 'HeroSMS 手机验证',
+        desc: '基于 hero-sms.com API 的付费接码平台（优先于 SMSToMe）',
+        fields: [
+          { key: 'hero_sms_api_key', label: 'HeroSMS API Key', secret: true },
+          { key: 'hero_sms_service', label: '服务代码', placeholder: 'dr (OpenAI)' },
+          { key: 'hero_sms_country', label: '国家代码', placeholder: '0 (任意国家)' },
+          { key: 'hero_sms_max_price', label: '最高单价', placeholder: '不限制' },
+          { key: 'hero_sms_phone_attempts', label: '尝试次数', placeholder: '3' },
+          { key: 'hero_sms_otp_timeout_seconds', label: '短信等待秒数', placeholder: '120' },
+          { key: 'hero_sms_poll_interval_seconds', label: '轮询间隔秒数', placeholder: '5' },
+          { key: 'hero_sms_reuse_number', label: '号码复用（20分钟内）', placeholder: '0 (关闭) / 1 (开启)' },
+        ],
+      },
     ],
   },
   {
