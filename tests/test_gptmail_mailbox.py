@@ -9,6 +9,7 @@ class GPTMailMailboxTests(unittest.TestCase):
         config = {
             "gptmail_base_url": "https://mail.chatgpt.org.uk",
             "gptmail_api_key": "gpt-test",
+            "gptmail_mode": "api",
         }
         config.update(extra)
         return create_mailbox("gptmail", extra=config)
@@ -48,7 +49,19 @@ class GPTMailMailboxTests(unittest.TestCase):
 
         self.assertEqual(account.email, "demo1234@known.example")
         self.assertEqual(account.extra["domain"], "known.example")
+        self.assertEqual(account.extra["mode"], "api")
         mock_request.assert_not_called()
+
+    @patch("core.gptmail_automation.GPTMailAutomationClient.generate_email")
+    def test_get_email_uses_automation_mode_without_api_request(self, mock_generate_email):
+        mock_generate_email.return_value = "auto@example.com"
+
+        mailbox = self._build_mailbox(gptmail_mode="automation")
+        account = mailbox.get_email()
+
+        self.assertEqual(account.email, "auto@example.com")
+        self.assertEqual(account.extra["mode"], "automation")
+        mock_generate_email.assert_called_once_with()
 
     @patch("requests.request")
     def test_get_current_ids_reads_inbox_messages(self, mock_request):
@@ -79,6 +92,19 @@ class GPTMailMailboxTests(unittest.TestCase):
             proxies=None,
             timeout=10,
         )
+
+    @patch("core.gptmail_automation.GPTMailAutomationClient.get_emails")
+    def test_get_current_ids_reads_automation_inbox_messages(self, mock_get_emails):
+        mock_get_emails.return_value = [
+            {"id": "m1", "subject": "Hello"},
+            {"message_id": "m2", "subject": "World"},
+        ]
+
+        mailbox = self._build_mailbox(gptmail_mode="automation")
+        ids = mailbox.get_current_ids(MailboxAccount(email="demo@example.com"))
+
+        self.assertEqual(ids, {"m1", "m2"})
+        mock_get_emails.assert_called_once_with("demo@example.com")
 
     @patch("time.sleep", return_value=None)
     @patch("requests.request")
@@ -136,6 +162,27 @@ class GPTMailMailboxTests(unittest.TestCase):
 
         self.assertEqual(code, "222222")
         self.assertEqual(mock_request.call_count, 4)
+
+    @patch("time.sleep", return_value=None)
+    @patch("core.gptmail_automation.GPTMailAutomationClient.get_emails")
+    def test_wait_for_code_reads_automation_messages(self, mock_get_emails, _sleep):
+        mock_get_emails.side_effect = [
+            [{"id": "m1", "subject": "Your code: 111111", "content": "111111"}],
+            [
+                {"id": "m1", "subject": "Your code: 111111", "content": "111111"},
+                {"id": "m2", "subject": "Your code: 222222", "content": "verification code 222222"},
+            ],
+        ]
+
+        mailbox = self._build_mailbox(gptmail_mode="automation")
+        code = mailbox.wait_for_code(
+            MailboxAccount(email="demo@example.com"),
+            timeout=5,
+            exclude_codes={"111111"},
+        )
+
+        self.assertEqual(code, "222222")
+        self.assertEqual(mock_get_emails.call_count, 2)
 
 
 def _response(payload, status_code=200):
