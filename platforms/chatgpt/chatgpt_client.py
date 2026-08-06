@@ -817,6 +817,30 @@ class ChatGPTClient:
         """
         self._enter_stage("otp", f"verify email otp code={otp_code}")
         self._log(f"验证 OTP 码: {otp_code}")
+
+        # DDG 转发可能延迟 20+ 分钟，提交 OTP 前先刷新 session 防止过期
+        self._log("刷新 OTP 验证 session...")
+        try:
+            refresh_url = f"{self.AUTH}/email-verification"
+            self._browser_pause()
+            refresh_resp = self.session.get(
+                refresh_url,
+                headers=self._headers(
+                    refresh_url,
+                    accept="text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    referer=f"{self.AUTH}/create-account/password",
+                    navigation=True,
+                ),
+                allow_redirects=True,
+                timeout=30,
+            )
+            if refresh_resp.status_code == 200:
+                self._log("OTP 验证 session 已刷新")
+            else:
+                self._log(f"OTP 验证 session 刷新警告: HTTP {refresh_resp.status_code}", "warning")
+        except Exception as e:
+            self._log(f"OTP 验证 session 刷新异常: {e}", "warning")
+
         url = f"{self.AUTH}/api/accounts/email-otp/validate"
 
         headers = self._headers(
@@ -949,7 +973,7 @@ class ChatGPTClient:
         birthdate,
         skymail_client,
         stop_before_about_you_submission=False,
-        otp_wait_timeout=600,
+        otp_wait_timeout=1200,
         otp_resend_wait_timeout=300,
     ):
         """
@@ -975,9 +999,9 @@ class ChatGPTClient:
         )
 
         try:
-            otp_wait_timeout = max(30, int(otp_wait_timeout or 600))
+            otp_wait_timeout = max(30, int(otp_wait_timeout or 1200))
         except Exception:
-            otp_wait_timeout = 600
+            otp_wait_timeout = 1200
         try:
             otp_resend_wait_timeout = max(30, int(otp_resend_wait_timeout or 300))
         except Exception:

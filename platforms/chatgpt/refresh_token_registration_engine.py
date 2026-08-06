@@ -138,6 +138,7 @@ class EmailServiceAdapter:
             timeout=timeout,
             otp_sent_at=otp_sent_at,
             exclude_codes=excluded,
+            target_email=email,
         )
         if code:
             code = str(code).strip()
@@ -179,7 +180,7 @@ class RefreshTokenRegistrationEngine:
         self.logs.append(log_message)
 
         if self.callback_logger:
-            self.callback_logger(log_message)
+            self.callback_logger(message)
 
         if level == "error":
             logger.error(log_message)
@@ -439,14 +440,14 @@ class RefreshTokenRegistrationEngine:
         register_otp_wait_seconds = self._read_int_config(
             "chatgpt_register_otp_wait_seconds",
             fallback_keys=("chatgpt_otp_wait_seconds",),
-            default=600,
+            default=1200,
             minimum=30,
             maximum=3600,
         )
         register_otp_resend_wait_seconds = self._read_int_config(
             "chatgpt_register_otp_resend_wait_seconds",
             fallback_keys=("chatgpt_register_otp_wait_seconds", "chatgpt_otp_wait_seconds"),
-            default=300,
+            default=1200,
             minimum=30,
             maximum=3600,
         )

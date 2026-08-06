@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Any, Dict, List
 from services.mail_imports import MailImportExecuteRequest, mail_import_registry
+from core.db import OutlookAccountModel, engine
 
 router = APIRouter(prefix="/outlook", tags=["微软邮箱（Outlook / Hotmail）"])
 

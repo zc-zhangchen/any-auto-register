@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+
 from core.config_store import config_store
 from services.mail_imports import MailImportExecuteRequest, MailImportSnapshotRequest, mail_import_registry
 
@@ -49,10 +50,18 @@ CONFIG_KEYS = [
     "applemail_mailboxes",
     "gptmail_base_url",
     "gptmail_api_key",
+    "gptmail_mode",
     "gptmail_domain",
     "opentrashmail_api_url",
     "opentrashmail_domain",
     "opentrashmail_password",
+    "cfrouting_domain",
+    "cfrouting_imap_server",
+    "cfrouting_imap_port",
+    "cfrouting_username",
+    "cfrouting_password",
+    "cfrouting_mailboxes",
+    "cfrouting_poll_interval_seconds",
     "cfworker_api_url",
     "cfworker_admin_token",
     "cfworker_custom_auth",
@@ -99,6 +108,11 @@ CONFIG_KEYS = [
     "kiro_manager_path",
     "kiro_manager_exe",
     "external_apps_update_mode",
+    "ddg_keys_config",
+    "ddg_daily_limit",
+    "mailtm_keys_config",
+    "mailtm_daily_limit",
+    "tmailor_api_key",
     "contribution_enabled",
     "contribution_server_url",
     "contribution_key",
@@ -134,8 +148,14 @@ def get_config():
         all_cfg["applemail_mailboxes"] = "INBOX,Junk"
     if not all_cfg.get("outlook_backend"):
         all_cfg["outlook_backend"] = "graph"
+    if not all_cfg.get("cfrouting_imap_port"):
+        all_cfg["cfrouting_imap_port"] = "993"
+    if not all_cfg.get("cfrouting_mailboxes"):
+        all_cfg["cfrouting_mailboxes"] = "INBOX"
     if not all_cfg.get("gptmail_base_url"):
         all_cfg["gptmail_base_url"] = "https://mail.chatgpt.org.uk"
+    if not all_cfg.get("gptmail_mode"):
+        all_cfg["gptmail_mode"] = "api"
     if not all_cfg.get("luckmail_base_url"):
         all_cfg["luckmail_base_url"] = "https://mails.luckyous.com/"
     if not str(all_cfg.get("contribution_enabled", "") or "").strip():
@@ -148,12 +168,65 @@ def get_config():
         all_cfg["custom_contribution_url"] = "http://127.0.0.1:5000"
     if not all_cfg.get("external_apps_update_mode"):
         all_cfg["external_apps_update_mode"] = "tag"
+    if not all_cfg.get("ddg_daily_limit"):
+        all_cfg["ddg_daily_limit"] = "50"
     if not str(all_cfg.get("email_domain_rule_enabled", "") or "").strip():
         all_cfg["email_domain_rule_enabled"] = "0"
     if not str(all_cfg.get("email_domain_level_count", "") or "").strip():
         all_cfg["email_domain_level_count"] = "2"
     # 只返回已知 key，未设置的返回空字符串
     return {k: all_cfg.get(k, "") for k in CONFIG_KEYS}
+
+
+@router.get("/ddg/status")
+def get_ddg_status():
+    """查询各 DDG Key 的今日用量状态。"""
+    import json as _json
+
+    raw = config_store.get("ddg_keys_config", "[]")
+    try:
+        keys = _json.loads(raw)
+    except (ValueError, _json.JSONDecodeError):
+        keys = []
+    if not isinstance(keys, list):
+        keys = []
+
+    valid_keys = [
+        item
+        for item in keys
+        if isinstance(item, dict)
+        and str(item.get("ddg_token") or "").strip()
+        and str(item.get("mail_inbox_url") or "").strip()
+    ]
+
+    if not valid_keys:
+        return {"keys": [], "total": 0, "message": "未配置有效的 DDG Key"}
+
+    daily_limit_raw = config_store.get("ddg_daily_limit", "50")
+    try:
+        daily_limit = int(daily_limit_raw)
+    except (TypeError, ValueError):
+        daily_limit = 50
+
+    from core.ddg_tracker import DdgUsageTracker
+
+    tracker = DdgUsageTracker(daily_limit=daily_limit)
+    statuses = tracker.get_all_status(len(valid_keys))
+
+    for i, status in enumerate(statuses):
+        if i < len(valid_keys):
+            status["label"] = valid_keys[i].get("label", f"Key-{i+1}")
+            # 隐藏敏感信息，只显示 token 前 8 位
+            token = str(valid_keys[i].get("ddg_token") or "")
+            if token.startswith("Bearer "):
+                token = token[7:]
+            status["token_preview"] = token[:8] + "..." if len(token) > 8 else token
+
+    return {
+        "keys": statuses,
+        "total": len(valid_keys),
+        "daily_limit": daily_limit,
+    }
 
 
 @router.put("")
