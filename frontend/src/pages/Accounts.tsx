@@ -165,16 +165,56 @@ function SummaryField({
   label,
   value,
   code = false,
+  copyable = false,
 }: {
   label: string
   value?: string
   code?: boolean
+  copyable?: boolean
 }) {
   const { token } = theme.useToken()
   if (!value) return null
 
   const content = code ? formatStructuredText(value) : value
   const isBlock = code || content.length > 96 || content.includes('\n')
+
+  const handleCopy = () => {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(value)
+        .then(() => {
+          message.success('已复制')
+        })
+        .catch((err) => {
+          console.error('复制失败:', err)
+          fallbackCopyInline(value)
+        })
+    } else {
+      fallbackCopyInline(value)
+    }
+  }
+
+  const fallbackCopyInline = (text: string) => {
+    const textArea = document.createElement('textarea')
+    textArea.value = text
+    textArea.style.position = 'fixed'
+    textArea.style.left = '-999999px'
+    textArea.style.top = '-999999px'
+    document.body.appendChild(textArea)
+    textArea.focus()
+    textArea.select()
+    try {
+      const successful = document.execCommand('copy')
+      if (successful) {
+        message.success('已复制')
+      } else {
+        message.error('复制失败，请手动复制')
+      }
+    } catch (err) {
+      console.error('复制失败:', err)
+      message.error('复制失败，请手动复制')
+    }
+    document.body.removeChild(textArea)
+  }
 
   return (
     <div
@@ -188,32 +228,39 @@ function SummaryField({
       <Text type="secondary" style={{ fontSize: 12, lineHeight: '20px' }}>
         {label}
       </Text>
-      {isBlock ? (
-        <pre
-          style={{
-            margin: 0,
-            padding: code ? '8px 10px' : 0,
-            borderRadius: code ? token.borderRadius : 0,
-            border: code ? `1px solid ${token.colorBorder}` : 'none',
-            background: code ? token.colorBgElevated : 'transparent',
-            color: code ? token.colorText : token.colorTextSecondary,
-            fontFamily: code ? 'SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace' : 'inherit',
-            fontSize: 12,
-            lineHeight: 1.6,
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word',
-            overflowWrap: 'anywhere',
-            maxHeight: code ? 160 : 'none',
-            overflow: code ? 'auto' : 'visible',
-          }}
-        >
-          {content}
-        </pre>
-      ) : (
-        <Text style={{ display: 'block', color: token.colorTextSecondary, lineHeight: '20px' }}>
-          {content}
-        </Text>
-      )}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, minWidth: 0 }}>
+        {isBlock ? (
+          <pre
+            style={{
+              margin: 0,
+              padding: code ? '8px 10px' : 0,
+              borderRadius: code ? token.borderRadius : 0,
+              border: code ? `1px solid ${token.colorBorder}` : 'none',
+              background: code ? token.colorBgElevated : 'transparent',
+              color: code ? token.colorText : token.colorTextSecondary,
+              fontFamily: code ? 'SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace' : 'inherit',
+              fontSize: 12,
+              lineHeight: 1.6,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              overflowWrap: 'anywhere',
+              maxHeight: code ? 160 : 'none',
+              overflow: code ? 'auto' : 'visible',
+              flex: 1,
+              minWidth: 0,
+            }}
+          >
+            {content}
+          </pre>
+        ) : (
+          <Text style={{ display: 'block', color: token.colorTextSecondary, lineHeight: '20px', flex: 1, minWidth: 0 }}>
+            {content}
+          </Text>
+        )}
+        {copyable && (
+          <Button type="text" size="small" icon={<CopyOutlined />} onClick={handleCopy} />
+        )}
+      </div>
     </div>
   )
 }
@@ -612,8 +659,41 @@ export default function Accounts() {
   }, [currentPlatform])
 
   const copyText = (text: string) => {
-    navigator.clipboard.writeText(text)
-    message.success('已复制')
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text)
+        .then(() => {
+          message.success('已复制')
+        })
+        .catch((err) => {
+          console.error('复制失败:', err)
+          fallbackCopy(text)
+        })
+    } else {
+      fallbackCopy(text)
+    }
+  }
+
+  const fallbackCopy = (text: string) => {
+    const textArea = document.createElement('textarea')
+    textArea.value = text
+    textArea.style.position = 'fixed'
+    textArea.style.left = '-999999px'
+    textArea.style.top = '-999999px'
+    document.body.appendChild(textArea)
+    textArea.focus()
+    textArea.select()
+    try {
+      const successful = document.execCommand('copy')
+      if (successful) {
+        message.success('已复制')
+      } else {
+        message.error('复制失败，请手动复制')
+      }
+    } catch (err) {
+      console.error('复制失败:', err)
+      message.error('复制失败，请手动复制')
+    }
+    document.body.removeChild(textArea)
   }
 
   const getRefreshToken = (record: any): string => {
@@ -643,7 +723,11 @@ export default function Accounts() {
 
     if (currentPlatform === 'kiro') {
       const header = ['邮箱', '昵称', '登录方式', 'RefreshToken', 'ClientId', 'ClientSecret', 'Region']
-      const rows = accounts.map((a) => {
+      // 如果有选中的账号，只导出选中的；否则导出全部
+      const accountsToExport = selectedRowKeys.length > 0
+        ? accounts.filter((a) => selectedRowKeys.includes(a.id))
+        : accounts
+      const rows = accountsToExport.map((a) => {
         const nickname = a.extra?.name || String(a.email || '').split('@')[0] || ''
         const provider = a.extra?.provider || 'BuilderId'
         const refreshToken = a.extra?.refreshToken || ''
@@ -675,7 +759,12 @@ export default function Accounts() {
       header.push('token')
     }
 
-    const rows = accounts.map((a) => {
+    // 如果有选中的账号，只导出选中的；否则导出全部
+    const accountsToExport = selectedRowKeys.length > 0
+      ? accounts.filter((a) => selectedRowKeys.includes(a.id))
+      : accounts
+
+    const rows = accountsToExport.map((a) => {
       const baseRow = [a.email, a.password, a.status, a.region, a.cashier_url, a.created_at].map(quoteCsv)
       if (currentPlatform === 'kiro') {
         baseRow.push(quoteCsv(a.extra?.accessToken || a.extra?.webAccessToken || a.token))
@@ -1459,7 +1548,9 @@ export default function Accounts() {
             </Popconfirm>
           )}
           <Button icon={<UploadOutlined />} onClick={() => setImportModalOpen(true)}>导入</Button>
-          <Button icon={<DownloadOutlined />} onClick={exportCsv} disabled={accounts.length === 0}>导出</Button>
+          <Button icon={<DownloadOutlined />} onClick={exportCsv} disabled={accounts.length === 0}>
+            {selectedRowKeys.length > 0 ? `导出 ${selectedRowKeys.length} 个` : '导出'}
+          </Button>
           <Button icon={<PlusOutlined />} onClick={() => setAddModalOpen(true)}>新增</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setRegisterModalOpen(true)}>注册</Button>
           <Button icon={<ReloadOutlined spin={loading} />} onClick={load} />
@@ -1637,8 +1728,11 @@ export default function Accounts() {
             })()}
             {currentPlatform === 'kiro' && currentAccount?.extra ? (
               <DetailSection title="Kiro 客户端信息">
-                <SummaryField label="Client ID" value={currentAccount.extra?.clientId} code />
-                <SummaryField label="Client Secret" value={currentAccount.extra?.clientSecret} code />
+                <SummaryField label="Refresh Token" value={currentAccount.extra?.refreshToken} code copyable />
+                <SummaryField label="Access Token" value={currentAccount.extra?.accessToken} code copyable />
+                <SummaryField label="Client ID" value={currentAccount.extra?.clientId} code copyable />
+                <SummaryField label="Client Secret" value={currentAccount.extra?.clientSecret} code copyable />
+                <SummaryField label="Region" value={currentAccount.extra?.region} copyable />
               </DetailSection>
             ) : null}
             {currentPlatform === 'chatgpt' ? (

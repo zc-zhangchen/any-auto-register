@@ -2,12 +2,21 @@ const { app, BrowserWindow, dialog } = require('electron')
 const { spawn } = require('child_process')
 const path = require('path')
 const http = require('http')
+const fs = require('fs')
 
 const PORT = 8000
+const BACKEND_WAIT_RETRIES = 180
 const isDev = !app.isPackaged
 
 let backendProcess = null
 let mainWindow = null
+let backendLogStream = null
+
+function writeBackendLog(message) {
+  const line = `[${new Date().toISOString()}] ${message}\n`
+  console.log(message)
+  if (backendLogStream) backendLogStream.write(line)
+}
 
 function getBackendPath() {
   if (isDev) {
@@ -15,7 +24,15 @@ function getBackendPath() {
   }
   // 生产模式：PyInstaller 打包的可执行文件放在 resources/backend/
   const ext = process.platform === 'win32' ? '.exe' : ''
-  return path.join(process.resourcesPath, 'backend', 'backend', `backend${ext}`)
+  return path.join(process.resourcesPath, 'backend', `backend${ext}`)
+}
+
+function getBackendLogPath() {
+  const logDir = process.platform === 'darwin'
+    ? path.join(app.getPath('home'), 'Library', 'Logs', 'Any Auto Register')
+    : app.getPath('userData')
+  fs.mkdirSync(logDir, { recursive: true })
+  return path.join(logDir, 'backend.log')
 }
 
 function startBackend() {
@@ -25,32 +42,44 @@ function startBackend() {
   }
 
   const backendPath = getBackendPath()
-  console.log('[backend] 启动:', backendPath)
+  const logPath = getBackendLogPath()
+  backendLogStream = fs.createWriteStream(logPath, { flags: 'a' })
+  writeBackendLog(`[backend] 日志文件: ${logPath}`)
+  writeBackendLog(`[backend] 启动: ${backendPath}`)
+
+  if (!fs.existsSync(backendPath)) {
+    throw new Error(`后端可执行文件不存在: ${backendPath}`)
+  }
 
   backendProcess = spawn(backendPath, [], {
-    cwd: path.join(process.resourcesPath, 'backend', 'backend'),
+    cwd: path.join(process.resourcesPath, 'backend'),
     env: { ...process.env, PORT: String(PORT) },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
 
-  backendProcess.stdout.on('data', (d) => console.log('[backend]', d.toString().trim()))
-  backendProcess.stderr.on('data', (d) => console.error('[backend]', d.toString().trim()))
+  backendProcess.stdout.on('data', (d) => writeBackendLog(`[backend:stdout] ${d.toString().trim()}`))
+  backendProcess.stderr.on('data', (d) => writeBackendLog(`[backend:stderr] ${d.toString().trim()}`))
 
   backendProcess.on('exit', (code) => {
-    console.warn('[backend] 进程退出，code:', code)
+    writeBackendLog(`[backend] 进程退出，code: ${code}`)
+  })
+
+  backendProcess.on('error', (err) => {
+    writeBackendLog(`[backend] 启动失败: ${err.stack || err.message || err}`)
   })
 }
 
-function waitForBackend(retries = 30) {
+function waitForBackend(retries = BACKEND_WAIT_RETRIES) {
   return new Promise((resolve, reject) => {
+    const logPath = getBackendLogPath()
     const attempt = (n) => {
       http.get(`http://localhost:${PORT}/api/platforms`, (res) => {
         if (res.statusCode < 500) resolve()
         else if (n > 0) setTimeout(() => attempt(n - 1), 1000)
-        else reject(new Error('后端启动超时'))
+        else reject(new Error(`后端启动超时，请查看日志: ${logPath}`))
       }).on('error', () => {
         if (n > 0) setTimeout(() => attempt(n - 1), 1000)
-        else reject(new Error('后端启动超时'))
+        else reject(new Error(`后端启动超时，请查看日志: ${logPath}`))
       })
     }
     attempt(retries)
@@ -72,7 +101,13 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
-  startBackend()
+  try {
+    startBackend()
+  } catch (err) {
+    dialog.showErrorBox('启动失败', err.message)
+    app.quit()
+    return
+  }
 
   try {
     await waitForBackend()
@@ -97,5 +132,9 @@ app.on('will-quit', () => {
   if (backendProcess) {
     backendProcess.kill()
     backendProcess = null
+  }
+  if (backendLogStream) {
+    backendLogStream.end()
+    backendLogStream = null
   }
 })
