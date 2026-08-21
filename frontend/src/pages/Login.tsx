@@ -124,10 +124,7 @@ function LoginContent() {
         title={
           <div style={{ textAlign: 'center', padding: '8px 0', background: 'transparent' }}>
             <UserOutlined style={{ fontSize: 28, color: '#6366f1', marginBottom: 8, display: 'block' }} />
-            <div style={{ fontSize: 18, fontWeight: 700 }}>Account Manager</div>
-            <Typography.Text type="secondary" style={{ fontSize: 13, fontWeight: 400 }}>
-              请输入密码登录
-            </Typography.Text>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>请输入密码登录</div>
           </div>
         }
       >

@@ -61,7 +61,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
-    title: 'Account Manager',
+    title: 'any-auto-register',
     webPreferences: {
       contextIsolation: true,
     },

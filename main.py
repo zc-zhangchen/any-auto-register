@@ -76,7 +76,7 @@ async def lifespan(app: FastAPI):
     stop()
 
 
-app = FastAPI(title="Account Manager", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="any-auto-register", version="1.0.0", lifespan=lifespan)
 
 
 @app.middleware("http")
