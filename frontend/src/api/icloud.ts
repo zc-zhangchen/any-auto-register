@@ -189,6 +189,19 @@ export function deleteICloudAlias(id: number, remote = true): Promise<{ ok: bool
   return apiFetch(`/icloud/aliases/${id}?remote=${remote}`, { method: 'DELETE' })
 }
 
+export interface ICloudBatchDeleteResult {
+  ok: boolean
+  deleted: number[]
+  failed: { alias_id: number; code: string; message: string }[]
+}
+
+export function batchDeleteICloudAliases(
+  ids: number[],
+  remote = true,
+): Promise<ICloudBatchDeleteResult> {
+  return post<ICloudBatchDeleteResult>('/icloud/aliases/batch-delete', { ids, remote })
+}
+
 export async function listICloudAliasMessages(
   aliasId: number,
   limit = 20,

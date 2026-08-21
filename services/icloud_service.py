@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
@@ -27,6 +28,8 @@ from platforms.icloud import (
     normalize_region,
     web_client,
 )
+
+logger = logging.getLogger(__name__)
 
 # Apple 对每个主号限制每滚动小时最多成功生成 5 个隐私邮箱。
 HOURLY_ALIAS_LIMIT = 5
@@ -363,6 +366,34 @@ def delete_alias(alias_id: int, *, remote: bool = True, proxy: str | None = None
         if alias is not None:
             session.delete(alias)
             session.commit()
+
+
+def delete_aliases(
+    alias_ids: list[int], *, remote: bool = True, proxy: str | None = None
+) -> dict[str, Any]:
+    """批量删除隐私邮箱。
+
+    逐条走单条删除的老路，一条失败不拖累后面的：上游偶发拒绝、个别地址已经在
+    Apple 那边不存在都很常见，整批回滚只会让用户反复重试。
+    """
+    deleted: list[int] = []
+    failed: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    for raw_id in alias_ids:
+        alias_id = int(raw_id)
+        if alias_id in seen:
+            continue
+        seen.add(alias_id)
+        try:
+            delete_alias(alias_id, remote=remote, proxy=proxy)
+        except ICloudError as error:
+            failed.append({"alias_id": alias_id, "code": error.code, "message": str(error)})
+        except Exception as error:  # noqa: BLE001 - 批量里不能让单条异常吞掉剩下的
+            logger.exception("批量删除隐私邮箱 %s 失败", alias_id)
+            failed.append({"alias_id": alias_id, "code": "unknown", "message": str(error)})
+        else:
+            deleted.append(alias_id)
+    return {"deleted": deleted, "failed": failed}
 
 
 def _upsert_alias(

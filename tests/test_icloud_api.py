@@ -182,6 +182,88 @@ def test_apple_rejection_stays_in_4xx_so_the_reason_survives(client, monkeypatch
     assert response.json()["detail"] == "iCloud HME 拒绝了请求"
 
 
+def test_batch_delete_revokes_every_selected_alias_upstream(client):
+    account = _import_account(client)
+    created = client.post(
+        "/api/icloud/aliases", json={"account_id": account["id"], "count": 3}
+    ).json()["items"]
+    ids = [item["id"] for item in created[:2]]
+
+    response = client.post("/api/icloud/aliases/batch-delete", json={"ids": ids})
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "deleted": ids, "failed": []}
+    assert client.stub.deleted == [item["address"] for item in created[:2]]
+    assert [item["id"] for item in client.get("/api/icloud/aliases").json()["items"]] == [
+        created[2]["id"]
+    ]
+
+
+def test_batch_delete_keeps_going_after_one_alias_fails(client, monkeypatch):
+    """一条删不掉不能拖累整批，否则用户只能一个个试到底是哪个卡住。"""
+    account = _import_account(client)
+    created = client.post(
+        "/api/icloud/aliases", json={"account_id": account["id"], "count": 2}
+    ).json()["items"]
+    doomed = created[0]["address"]
+
+    def _reject(_credentials, *, address, provider_id="", status=""):
+        if address == doomed:
+            raise ICloudError("upstream_rejected", "iCloud 拒绝了删除请求")
+        client.stub.deleted.append(address)
+
+    monkeypatch.setattr(client.stub, "delete_private_email", _reject)
+
+    response = client.post(
+        "/api/icloud/aliases/batch-delete",
+        json={"ids": [item["id"] for item in created]},
+    )
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["ok"] is False
+    assert body["deleted"] == [created[1]["id"]]
+    assert body["failed"] == [
+        {
+            "alias_id": created[0]["id"],
+            "code": "upstream_rejected",
+            "message": "iCloud 拒绝了删除请求",
+        }
+    ]
+    # 失败那条必须还在库里，不然本地没了、Apple 那边还占着额度
+    assert [item["id"] for item in client.get("/api/icloud/aliases").json()["items"]] == [
+        created[0]["id"]
+    ]
+
+
+def test_batch_delete_can_skip_the_upstream_call(client):
+    account = _import_account(client)
+    alias = client.post("/api/icloud/aliases", json={"account_id": account["id"]}).json()["items"][0]
+
+    response = client.post(
+        "/api/icloud/aliases/batch-delete", json={"ids": [alias["id"]], "remote": False}
+    )
+
+    assert response.status_code == 200
+    assert client.stub.deleted == []
+    assert client.get("/api/icloud/aliases").json()["items"] == []
+
+
+def test_batch_delete_reports_unknown_ids_instead_of_silently_passing(client):
+    response = client.post("/api/icloud/aliases/batch-delete", json={"ids": [999, 999]})
+
+    body = response.json()
+    assert body["ok"] is False
+    assert body["deleted"] == []
+    # 同一个 id 重复提交只算一次
+    assert [item["alias_id"] for item in body["failed"]] == [999]
+    assert body["failed"][0]["code"] == "alias_not_found"
+
+
+def test_batch_delete_without_ids_is_a_400(client):
+    assert client.post("/api/icloud/aliases/batch-delete", json={"ids": []}).status_code == 400
+
+
 def test_unknown_account_and_alias_map_to_http_404(client):
     assert client.post("/api/icloud/accounts/999/sync").status_code == 404
     assert client.request("DELETE", "/api/icloud/aliases/999").status_code == 404

@@ -111,6 +111,11 @@ class GenerateAliasRequest(BaseModel):
     count: int = Field(default=1, ge=1, le=5)
 
 
+class BatchDeleteAliasRequest(BaseModel):
+    ids: list[int] = Field(default_factory=list)
+    remote: bool = True
+
+
 def _login_response(state: LoginState) -> dict[str, Any]:
     """登录完成时顺带把主号落库，让前端一次调用即可拿到最终结果。"""
     payload = state.to_dict()
@@ -266,6 +271,14 @@ def generate_aliases(body: GenerateAliasRequest):
     except ICloudError as error:
         raise _http_error(error) from error
     return {"items": created}
+
+
+@router.post("/aliases/batch-delete")
+def batch_delete_aliases(body: BatchDeleteAliasRequest):
+    if not body.ids:
+        raise HTTPException(400, "请先选择要删除的隐私邮箱")
+    result = icloud_service.delete_aliases(body.ids, remote=body.remote)
+    return {"ok": not result["failed"], **result}
 
 
 @router.delete("/aliases/{alias_id}")
