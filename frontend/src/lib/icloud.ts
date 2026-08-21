@@ -15,6 +15,18 @@ export function getICloudRegionLabel(region?: string): string {
   return ICLOUD_REGION_OPTIONS.find((item) => item.value === region)?.label ?? region ?? '-'
 }
 
+/**
+ * 隐私邮箱的固定收件链接：打开就是这个地址的最新一封邮件。
+ * 拿去贴到别处也能用，不用先进 iCloud 页再翻列表。
+ */
+export function aliasMailPath(aliasId: number): string {
+  return `/icloud/mail/${aliasId}`
+}
+
+export function aliasMailUrl(aliasId: number): string {
+  return `${window.location.origin}${aliasMailPath(aliasId)}`
+}
+
 export function formatDateTime(value?: string | null): string {
   if (!value) return '-'
   const parsed = new Date(value)
