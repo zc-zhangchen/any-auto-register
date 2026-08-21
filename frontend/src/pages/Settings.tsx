@@ -583,7 +583,7 @@ function ConfigField({ field }: { field: FieldConfig }) {
 
 function ConfigSection({ section }: { section: SectionConfig }) {
   return (
-    <Card title={section.title} extra={section.desc && <span style={{ fontSize: 12, color: '#7a8ba3' }}>{section.desc}</span>} style={{ marginBottom: 16 }}>
+    <Card title={section.title} extra={section.desc && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{section.desc}</span>} style={{ marginBottom: 16 }}>
       {section.fields.map((field) => (
         <ConfigField key={field.key} field={field} />
       ))}
@@ -612,7 +612,7 @@ function CFWorkerDomainPoolSection({ form }: { form: any }) {
   return (
     <Card
       title="CF Worker 域名池"
-      extra={<span style={{ fontSize: 12, color: '#7a8ba3' }}>注册时会从已启用域名中随机选择一个</span>}
+      extra={<span style={{ fontSize: 12, color: 'var(--text-muted)' }}>注册时会从已启用域名中随机选择一个</span>}
       style={{ marginBottom: 16 }}
     >
       <Form.List name="cfworker_domains">
@@ -826,13 +826,13 @@ function SolverStatus() {
       >
         <Space size={8}>
           {running === null ? (
-            <SyncOutlined spin style={{ color: '#7a8ba3' }} />
+            <SyncOutlined spin style={{ color: 'var(--text-muted)' }} />
           ) : running ? (
-            <CheckCircleOutlined style={{ color: '#10b981' }} />
+            <CheckCircleOutlined style={{ color: 'var(--success)' }} />
           ) : (
-            <CloseCircleOutlined style={{ color: '#ef4444' }} />
+            <CloseCircleOutlined style={{ color: 'var(--danger)' }} />
           )}
-          <span style={{ color: running ? '#10b981' : '#7a8ba3', fontWeight: 500 }}>
+          <span style={{ color: running ? 'var(--success)' : 'var(--text-muted)', fontWeight: 500 }}>
             {running === null ? '检测中' : running ? '运行中' : '未运行'}
           </span>
         </Space>
@@ -977,7 +977,7 @@ function IntegrationsPanel() {
         cancelText="取消"
         width={760}
       >
-        <Typography.Paragraph style={{ marginBottom: 8, color: resultModal.ok ? '#10b981' : '#ef4444' }}>
+        <Typography.Paragraph style={{ marginBottom: 8, color: resultModal.ok ? 'var(--success)' : 'var(--danger)' }}>
           {resultModal.ok ? '操作已完成。' : '操作失败。'}
         </Typography.Paragraph>
         <pre
@@ -987,7 +987,7 @@ function IntegrationsPanel() {
             overflow: 'auto',
             padding: 12,
             borderRadius: 8,
-            background: 'rgba(127,127,127,0.08)',
+            background: 'var(--bg-subtle)',
             fontSize: 12,
             lineHeight: 1.5,
             whiteSpace: 'pre-wrap',
@@ -1048,7 +1048,7 @@ function IntegrationsPanel() {
             {item.management_url ? <div>管理页：<Typography.Text copyable>{item.management_url}</Typography.Text></div> : null}
             {item.management_key ? <div>登录口令：<Typography.Text copyable>{item.management_key}</Typography.Text></div> : null}
             <div>日志：<Typography.Text copyable>{item.log_path}</Typography.Text></div>
-            {item.last_error ? <div style={{ color: '#ef4444' }}>最近错误：{item.last_error}</div> : null}
+            {item.last_error ? <div style={{ color: 'var(--danger)' }}>最近错误：{item.last_error}</div> : null}
             <Space wrap>
               {item.management_url ? (
                 <Button onClick={() => window.open(item.management_url, '_blank')}>
@@ -1573,7 +1573,7 @@ export default function Settings() {
       ) : null}
       <div>
         <h1 style={{ fontSize: 24, fontWeight: 'bold', margin: 0 }}>全局配置</h1>
-        <p style={{ color: '#7a8ba3', marginTop: 4 }}>配置将持久化保存，注册任务自动使用</p>
+        <p style={{ color: 'var(--text-muted)', marginTop: 4 }}>配置将持久化保存，注册任务自动使用</p>
       </div>
 
       <div style={{ display: 'flex', gap: 24 }}>

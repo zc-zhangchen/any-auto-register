@@ -642,7 +642,7 @@ export default function MailImportPanel({ form }: MailImportPanelProps) {
         {supportsAliasSplit ? (
           <div
             style={{
-              border: '1px dashed rgba(127,127,127,0.35)',
+              border: '1px dashed var(--border-strong)',
               borderRadius: 8,
               padding: 12,
               display: 'flex',
@@ -753,10 +753,10 @@ export default function MailImportPanel({ form }: MailImportPanelProps) {
         ) : (
           <div
             style={{
-              border: '1px solid rgba(127,127,127,0.25)',
+              border: '1px solid var(--border)',
               borderRadius: 8,
               padding: 12,
-              background: 'rgba(127,127,127,0.06)',
+              background: 'var(--bg-subtle)',
               minHeight: 88,
               display: 'flex',
               alignItems: 'center',

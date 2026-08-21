@@ -22,7 +22,7 @@ import Settings from '@/pages/Settings'
 import TaskHistory from '@/pages/TaskHistory'
 import RunningTasks from '@/pages/RunningTasks'
 import Login from '@/pages/Login'
-import { darkTheme, lightTheme } from './theme'
+import { applyThemeVars, darkTheme, lightTheme } from './theme'
 import { apiFetch, clearToken, getToken } from '@/lib/utils'
 
 const { Sider, Content } = Layout
@@ -67,11 +67,7 @@ function AppContent() {
   const navigate = useNavigate()
 
   useEffect(() => {
-    document.documentElement.classList.toggle('light', themeMode === 'light')
-    document.documentElement.style.setProperty(
-      '--sider-trigger-border',
-      themeMode === 'light' ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.15)'
-    )
+    applyThemeVars(themeMode)
     localStorage.setItem('theme', themeMode)
   }, [themeMode])
 
@@ -147,8 +143,8 @@ function AppContent() {
           collapsed={collapsed}
           onCollapse={setCollapsed}
           style={{
-            background: currentTheme.token?.colorBgContainer,
-            borderRight: `1px solid ${currentTheme.token?.colorBorder}`,
+            background: 'var(--bg-container)',
+            borderRight: '1px solid var(--border)',
           }}
           width={220}
         >
@@ -158,17 +154,17 @@ function AppContent() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              borderBottom: `1px solid ${currentTheme.token?.colorBorder}`,
+              borderBottom: '1px solid var(--border)',
             }}
           >
-            <DashboardOutlined style={{ fontSize: 20, color: currentTheme.token?.colorPrimary }} />
+            <DashboardOutlined style={{ fontSize: 20, color: 'var(--accent)' }} />
             {!collapsed && (
               <span
                 style={{
                   marginLeft: 8,
                   fontWeight: 600,
                   fontSize: 14,
-                  color: currentTheme.token?.colorText,
+                  color: 'var(--text)',
                 }}
               >
                 Account Manager
@@ -231,7 +227,7 @@ function AppContent() {
           style={{
             padding: 24,
             overflow: 'auto',
-            background: currentTheme.token?.colorBgLayout,
+            background: 'var(--bg-layout)',
           }}
         >
           <Routes>

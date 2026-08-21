@@ -179,7 +179,7 @@ export default function Proxies() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 'bold', margin: 0 }}>代理管理</h1>
-          <p style={{ color: '#7a8ba3', marginTop: 4 }}>共 {proxies.length} 个代理</p>
+          <p style={{ color: 'var(--text-muted)', marginTop: 4 }}>共 {proxies.length} 个代理</p>
         </div>
         <Button icon={<ReloadOutlined spin={checking} />} onClick={check} loading={checking}>
           检测全部
@@ -211,7 +211,7 @@ export default function Proxies() {
 
       <Card>
         <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between' }}>
-          <div style={{ color: '#7a8ba3' }}>
+          <div style={{ color: 'var(--text-muted)' }}>
             已选中 {selectedRowKeys.length} 条
           </div>
           <Popconfirm

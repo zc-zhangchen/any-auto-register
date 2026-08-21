@@ -41,25 +41,25 @@ export default function Dashboard() {
       title: '总账号数',
       value: stats?.total ?? 0,
       icon: <UserOutlined style={{ fontSize: 32 }} />,
-      color: '#6366f1',
+      color: 'var(--accent)',
     },
     {
       title: '试用中',
       value: stats?.by_status?.trial ?? 0,
       icon: <ClockCircleOutlined style={{ fontSize: 32 }} />,
-      color: '#f59e0b',
+      color: 'var(--warning)',
     },
     {
       title: '已订阅',
       value: stats?.by_status?.subscribed ?? 0,
       icon: <CheckCircleOutlined style={{ fontSize: 32 }} />,
-      color: '#10b981',
+      color: 'var(--success)',
     },
     {
       title: '已失效',
       value: (stats?.by_status?.expired ?? 0) + (stats?.by_status?.invalid ?? 0),
       icon: <CloseCircleOutlined style={{ fontSize: 32 }} />,
-      color: '#ef4444',
+      color: 'var(--danger)',
     },
   ]
 
@@ -68,7 +68,7 @@ export default function Dashboard() {
       <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 'bold', margin: 0 }}>仪表盘</h1>
-          <p style={{ color: '#7a8ba3', marginTop: 4 }}>账号总览</p>
+          <p style={{ color: 'var(--text-muted)', marginTop: 4 }}>账号总览</p>
         </div>
         <Button icon={<ReloadOutlined spin={loading} />} onClick={load} loading={loading}>
           刷新
@@ -110,7 +110,7 @@ export default function Dashboard() {
                 </div>
               ))
             ) : (
-              <div style={{ textAlign: 'center', color: '#7a8ba3' }}>加载中...</div>
+              <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>加载中...</div>
             )}
           </Card>
         </Col>
@@ -130,7 +130,7 @@ export default function Dashboard() {
                     justifyContent: 'space-between',
                     alignItems: 'center',
                     padding: '8px 0',
-                    borderBottom: '1px solid rgba(255,255,255,0.1)',
+                    borderBottom: '1px solid var(--border)',
                   }}
                 >
                   <Tag color={STATUS_COLORS[status] || 'default'}>{status}</Tag>
@@ -138,7 +138,7 @@ export default function Dashboard() {
                 </div>
               ))
             ) : (
-              <div style={{ textAlign: 'center', color: '#7a8ba3' }}>加载中...</div>
+              <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>加载中...</div>
             )}
           </Card>
         </Col>

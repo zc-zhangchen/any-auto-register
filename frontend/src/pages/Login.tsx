@@ -57,7 +57,7 @@ function LoginContent() {
 
   const cardStyle: React.CSSProperties = {
     width: 380,
-    boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+    boxShadow: '0 10px 30px rgba(0,0,0,0.28)',
     borderRadius: 12,
   }
 
@@ -66,7 +66,7 @@ function LoginContent() {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+    background: 'linear-gradient(160deg, var(--bg-layout) 0%, var(--bg-container) 100%)',
   }
 
   if (step === '2fa') {
@@ -76,7 +76,7 @@ function LoginContent() {
           style={cardStyle}
           title={
             <div style={{ textAlign: 'center', padding: '8px 0' }}>
-              <SafetyCertificateOutlined style={{ fontSize: 28, color: '#6366f1', marginBottom: 8, display: 'block' }} />
+              <SafetyCertificateOutlined style={{ fontSize: 28, color: 'var(--accent)', marginBottom: 8, display: 'block' }} />
               <div style={{ fontSize: 18, fontWeight: 700 }}>双因素验证</div>
               <Typography.Text type="secondary" style={{ fontSize: 13, fontWeight: 400 }}>
                 请输入验证器 App 中的 6 位验证码
@@ -123,7 +123,7 @@ function LoginContent() {
         style={cardStyle}
         title={
           <div style={{ textAlign: 'center', padding: '8px 0', background: 'transparent' }}>
-            <UserOutlined style={{ fontSize: 28, color: '#6366f1', marginBottom: 8, display: 'block' }} />
+            <UserOutlined style={{ fontSize: 28, color: 'var(--accent)', marginBottom: 8, display: 'block' }} />
             <div style={{ fontSize: 18, fontWeight: 700 }}>Account Manager</div>
             <Typography.Text type="secondary" style={{ fontSize: 13, fontWeight: 400 }}>
               请输入密码登录

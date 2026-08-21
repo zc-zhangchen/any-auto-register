@@ -876,7 +876,7 @@ export default function Accounts() {
             overflow: 'auto',
             padding: 12,
             borderRadius: 8,
-            background: 'rgba(127,127,127,0.08)',
+            background: 'var(--bg-subtle)',
             fontSize: 12,
             lineHeight: 1.5,
             whiteSpace: 'pre-wrap',
@@ -907,7 +907,7 @@ export default function Accounts() {
             overflow: 'auto',
             padding: 12,
             borderRadius: 8,
-            background: 'rgba(127,127,127,0.08)',
+            background: 'var(--bg-subtle)',
             fontSize: 12,
             lineHeight: 1.5,
             whiteSpace: 'pre-wrap',
@@ -1216,7 +1216,7 @@ export default function Accounts() {
       width: 120,
       render: (_: any, record: any) => {
         const rt = getRefreshToken(record)
-        if (!rt) return <span style={{ color: '#ccc' }}>-</span>
+        if (!rt) return <span style={{ color: 'var(--text-muted)' }}>-</span>
         return (
           <Space size={6} style={{ width: '100%', justifyContent: 'space-between' }}>
             <Text style={{ ...secretPreviewStyle, fontSize: 11, maxWidth: 58 }} title={rt}>
@@ -1688,8 +1688,8 @@ export default function Accounts() {
         confirmLoading={importLoading}
         maskClosable={false}
       >
-        <p style={{ marginBottom: 8, fontSize: 12, color: '#7a8ba3' }}>
-          每行格式: <code style={{ background: 'rgba(255,255,255,0.1)', padding: '2px 4px', borderRadius: 4 }}>email password [cashier_url]</code>
+        <p style={{ marginBottom: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+          每行格式: <code style={{ background: 'var(--bg-subtle)', padding: '2px 4px', borderRadius: 4 }}>email password [cashier_url]</code>
         </p>
         <Input.TextArea
           value={importText}

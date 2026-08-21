@@ -1,3 +1,34 @@
+/* 变量在 theme.ts 里按主题注入，这里放一份暗色默认值兜首屏 */
+:root {
+  --bg-layout: #161922;
+  --bg-container: #1e212c;
+  --bg-elevated: #262a36;
+  --bg-subtle: rgba(255, 255, 255, 0.045);
+  --border: rgba(255, 255, 255, 0.09);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --text: #d7dce5;
+  --text-secondary: #a4adbd;
+  --text-muted: #7b8595;
+  --accent: #5f82b8;
+  --accent-hover: #7396c8;
+  --accent-soft: rgba(95, 130, 184, 0.16);
+  --success: #6cbf9a;
+  --success-soft: rgba(108, 191, 154, 0.14);
+  --warning: #d3a26b;
+  --warning-soft: rgba(211, 162, 107, 0.14);
+  --danger: #cf8181;
+  --danger-soft: rgba(207, 129, 129, 0.14);
+  --log-bg: #191c24;
+  --log-border: rgba(255, 255, 255, 0.07);
+  --log-text: #c3cad6;
+  --log-muted: #79828f;
+  --log-success: #7fc2a1;
+  --log-warning: #d7a86e;
+  --log-danger: #d48c8c;
+  --selection-bg: rgba(95, 130, 184, 0.38);
+  color-scheme: dark;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -8,6 +39,8 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background: var(--bg-layout);
+  color: var(--text);
 }
 
 #root {
@@ -16,24 +49,6 @@ body {
 
 .ant-layout-sider-trigger {
   border-top: 1px solid var(--sider-trigger-border, rgba(255, 255, 255, 0.15));
-}
-
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: rgba(128, 128, 128, 0.3);
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(128, 128, 128, 0.5);
 }
 
 /* ── 全局动画 ────────────────────────────── */
@@ -86,7 +101,7 @@ body {
 
 .hover-lift:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.22);
 }
 
 /* ── 滚动条样式 ──────────────────────────── */
@@ -96,11 +111,11 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--bg-base);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
+  background: var(--border-strong);
   border-radius: 4px;
 }
 
@@ -110,12 +125,62 @@ body {
 
 /* ── 选择颜色 ────────────────────────────── */
 ::selection {
-  background: rgba(99, 102, 241, 0.6);
-  color: white;
+  background: var(--selection-bg);
+  color: inherit;
 }
 
-.log-panel::selection,
-.log-panel *::selection {
-  background: rgba(99, 102, 241, 0.35);
-  color: inherit;
+/* ── 弹窗：遮罩和投影都收一点，避免硬切 ────── */
+.ant-modal-mask {
+  background: rgba(12, 14, 20, 0.55);
+}
+
+.light .ant-modal-mask {
+  background: rgba(15, 23, 42, 0.3);
+}
+
+.ant-modal-content,
+.ant-drawer-content {
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.32);
+}
+
+.ant-modal-header {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+}
+
+/* ── 任务日志面板（注册 / 补 RT 共用）───────── */
+.log-panel {
+  background: var(--log-bg);
+  border: 1px solid var(--log-border);
+  color: var(--log-text);
+}
+
+.log-panel .log-line {
+  line-height: 1.6;
+  color: var(--log-text);
+}
+
+.log-panel .log-line--success { color: var(--log-success); }
+.log-panel .log-line--danger { color: var(--log-danger); }
+.log-panel .log-line--warning { color: var(--log-warning); }
+.log-panel .log-placeholder { color: var(--log-muted); }
+.log-panel .log-error { color: var(--log-danger); }
+
+.log-stat {
+  border: 1px solid transparent;
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+}
+
+.log-stat--success {
+  background: var(--success-soft);
+  border-color: var(--success-soft);
+  color: var(--success);
+}
+
+.log-stat--info {
+  background: var(--accent-soft);
+  border-color: var(--accent-soft);
+  color: var(--accent-hover);
 }

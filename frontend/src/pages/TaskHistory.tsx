@@ -117,7 +117,7 @@ export default function TaskHistory() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 'bold', margin: 0 }}>任务历史</h1>
-          <p style={{ color: '#7a8ba3', marginTop: 4 }}>注册任务执行记录</p>
+          <p style={{ color: 'var(--text-muted)', marginTop: 4 }}>注册任务执行记录</p>
         </div>
         <Space>
           <Text type="secondary">{total} 条记录</Text>

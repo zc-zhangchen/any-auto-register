@@ -39,6 +39,13 @@ function normalizeSummary(next: RegisterSummary): RegisterSummary {
   return { success, registered, total }
 }
 
+function lineToneClass(line: string): string {
+  if (line.includes('✓') || line.includes('成功')) return 'log-line--success'
+  if (line.includes('✗') || line.includes('失败') || line.includes('错误')) return 'log-line--danger'
+  if (line.includes('停止') || line.includes('跳过')) return 'log-line--warning'
+  return ''
+}
+
 function mergeSummary(previous: RegisterSummary, incoming: Partial<RegisterSummary>): RegisterSummary {
   return normalizeSummary({
     success: incoming.success ?? previous.success,
@@ -274,19 +281,19 @@ export function TaskLogPanel({ taskId, onDone, kind = 'register' }: TaskLogPanel
 
   const footerText =
     terminalStatus === 'done'
-      ? { text: text.done, color: '#10b981' }
+      ? { text: text.done, color: 'var(--success)' }
       : terminalStatus === 'stopped'
-        ? { text: '任务已停止', color: '#d97706' }
+        ? { text: '任务已停止', color: 'var(--warning)' }
         : terminalStatus === 'failed'
-          ? { text: '任务失败', color: '#dc2626' }
+          ? { text: '任务失败', color: 'var(--danger)' }
           : null
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <Space wrap style={{ marginBottom: 8 }}>
-        <Tag color="green">{text.success}：{summary.success}</Tag>
-        <Tag color="blue">{text.registered}：{summary.registered}</Tag>
-        <Tag color="default">{text.total}：{summary.total}</Tag>
+        <Tag className="log-stat log-stat--success" bordered={false}>{text.success}：{summary.success}</Tag>
+        <Tag className="log-stat log-stat--info" bordered={false}>{text.registered}：{summary.registered}</Tag>
+        <Tag className="log-stat" bordered={false}>{text.total}：{summary.total}</Tag>
       </Space>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -323,11 +330,9 @@ export function TaskLogPanel({ taskId, onDone, kind = 'register' }: TaskLogPanel
           flex: 1,
           overflowY: 'auto',
           overflowX: 'hidden',
-          background: '#ffffff',
-          border: '1px solid #e5e7eb',
-          borderRadius: 8,
-          padding: 12,
-          fontFamily: 'monospace',
+          borderRadius: 10,
+          padding: '12px 14px',
+          fontFamily: '"SFMono-Regular", Menlo, Consolas, monospace',
           fontSize: 12,
           minHeight: 320,
           maxHeight: '65vh',
@@ -338,23 +343,10 @@ export function TaskLogPanel({ taskId, onDone, kind = 'register' }: TaskLogPanel
           wordBreak: 'break-word',
         }}
       >
-        {lines.length === 0 && !error && <div style={{ color: '#9ca3af' }}>等待日志...</div>}
-        {error && <div style={{ color: '#dc2626' }}>{error}</div>}
+        {lines.length === 0 && !error && <div className="log-placeholder">等待日志...</div>}
+        {error && <div className="log-error">{error}</div>}
         {lines.map((line, index) => (
-          <div
-            key={index}
-            style={{
-              lineHeight: 1.5,
-              color:
-                line.includes('✓') || line.includes('成功')
-                  ? '#059669'
-                  : line.includes('✗') || line.includes('失败') || line.includes('错误')
-                    ? '#dc2626'
-                    : line.includes('停止') || line.includes('跳过')
-                      ? '#d97706'
-                      : '#1f2937',
-            }}
-          >
+          <div key={index} className={`log-line ${lineToneClass(line)}`}>
             {line}
           </div>
         ))}

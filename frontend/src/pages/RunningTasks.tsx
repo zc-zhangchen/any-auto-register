@@ -213,16 +213,16 @@ export default function RunningTasks() {
                 format={() => `${done}/${total}`}
               />
               <Space size={8}>
-                <Text style={{ fontSize: 11, color: '#10b981' }}>
+                <Text style={{ fontSize: 11, color: 'var(--success)' }}>
                   ✓ 成功 {success}
                 </Text>
                 {failed > 0 && (
-                  <Text style={{ fontSize: 11, color: '#dc2626' }}>
+                  <Text style={{ fontSize: 11, color: 'var(--danger)' }}>
                     ✗ 失败 {failed}
                   </Text>
                 )}
                 {skipped > 0 && (
-                  <Text style={{ fontSize: 11, color: '#d97706' }}>
+                  <Text style={{ fontSize: 11, color: 'var(--warning)' }}>
                     → 跳过 {skipped}
                   </Text>
                 )}
@@ -283,7 +283,7 @@ export default function RunningTasks() {
         <div style={{ marginBottom: 24 }}>
           <Text
             strong
-            style={{ display: 'block', marginBottom: 8, fontSize: 13, color: '#6366f1' }}
+            style={{ display: 'block', marginBottom: 8, fontSize: 13, color: 'var(--accent)' }}
           >
             进行中 ({activeTasks.length})
           </Text>
@@ -296,7 +296,7 @@ export default function RunningTasks() {
         <div>
           <Text
             strong
-            style={{ display: 'block', marginBottom: 8, fontSize: 13, color: '#6b7280' }}
+            style={{ display: 'block', marginBottom: 8, fontSize: 13, color: 'var(--text-muted)' }}
           >
             已完成 ({finishedTasks.length})
           </Text>

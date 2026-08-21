@@ -246,7 +246,7 @@ export default function RegisterTaskPage() {
     <div style={{ maxWidth: 800 }}>
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ fontSize: 24, fontWeight: 'bold', margin: 0 }}>注册任务</h1>
-        <p style={{ color: '#7a8ba3', marginTop: 4 }}>创建账号自动注册任务</p>
+        <p style={{ color: 'var(--text-muted)', marginTop: 4 }}>创建账号自动注册任务</p>
       </div>
 
       <Form form={form} layout="vertical" onFinish={submit} initialValues={{
@@ -665,21 +665,21 @@ export default function RegisterTaskPage() {
             <Descriptions.Item label="跳过">{task.skipped ?? 0}</Descriptions.Item>
           </Descriptions>
           {task.success != null && (
-            <div style={{ marginTop: 8, color: '#10b981' }}>
+            <div style={{ marginTop: 8, color: 'var(--success)' }}>
               <CheckCircleOutlined /> 成功 {task.success} 个
             </div>
           )}
           {task.errors?.length > 0 && (
             <div style={{ marginTop: 8 }}>
               {task.errors.map((e: string, i: number) => (
-                <div key={i} style={{ color: '#ef4444', marginBottom: 4 }}>
+                <div key={i} style={{ color: 'var(--danger)', marginBottom: 4 }}>
                   <CloseCircleOutlined /> {e}
                 </div>
               ))}
             </div>
           )}
           {task.error && (
-            <div style={{ marginTop: 8, color: '#ef4444' }}>
+            <div style={{ marginTop: 8, color: 'var(--danger)' }}>
               <CloseCircleOutlined /> {task.error}
             </div>
           )}

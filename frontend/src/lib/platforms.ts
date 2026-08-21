@@ -23,7 +23,7 @@ export const PLATFORMS: Record<PlatformName, PlatformMeta> = {
   chatgpt: {
     name: 'chatgpt',
     label: 'ChatGPT',
-    color: '#3b82f6',
+    color: '#6d90c7',
     executors: ['protocol', 'headless', 'headed'],
     usesMailbox: true,
     usesCaptcha: true,
@@ -31,7 +31,7 @@ export const PLATFORMS: Record<PlatformName, PlatformMeta> = {
   icloud: {
     name: 'icloud',
     label: 'iCloud 隐私邮箱',
-    color: '#0ea5e9',
+    color: '#5b8db3',
     executors: ['protocol'],
     usesMailbox: false,
     usesCaptcha: false,
@@ -54,7 +54,7 @@ export function getPlatformLabel(platform?: string): string {
 }
 
 export function getPlatformColor(platform?: string): string {
-  return getPlatformMeta(platform)?.color ?? '#6366f1'
+  return getPlatformMeta(platform)?.color ?? '#7b8595'
 }
 
 export function getSupportedExecutors(platform?: string): ExecutorType[] {

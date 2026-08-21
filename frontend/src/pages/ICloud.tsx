@@ -148,7 +148,7 @@ export default function ICloudPage() {
           <Badge
             count={account.alias_count}
             showZero
-            color="#0ea5e9"
+            color="#5b8db3"
             style={{ marginRight: 8 }}
           />
           <Text type="secondary">
@@ -554,11 +554,11 @@ function MessageBody({ item }: { item: ICloudMessage }) {
   const srcDoc = `<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="script-src 'none'">
 <style>
-  html,body{margin:0;padding:16px;background:#fff;color:#1f1f1f;
+  html,body{margin:0;padding:16px;background:#f7f8fa;color:#2f3540;
     font:14px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
     word-break:break-word;overflow-wrap:anywhere;}
   img,table{max-width:100%!important;height:auto;}
-  a{color:#1677ff;}
+  a{color:#3f6ea8;}
 </style></head><body>${html}</body></html>`
 
   return (
@@ -568,7 +568,7 @@ function MessageBody({ item }: { item: ICloudMessage }) {
       sandbox="allow-same-origin"
       srcDoc={srcDoc}
       onLoad={resize}
-      style={{ width: '100%', height, border: 0, borderRadius: 8, background: '#fff', display: 'block' }}
+      style={{ width: '100%', height, border: 0, borderRadius: 10, background: '#f7f8fa', display: 'block' }}
     />
   )
 }
@@ -657,8 +657,8 @@ function AliasInboxDrawer({ alias, onClose }: { alias: ICloudAlias | null; onClo
             style={{
               cursor: 'pointer',
               padding: '12px 16px',
-              borderInlineStart: `3px solid ${active ? 'var(--ant-color-primary, #1677ff)' : 'transparent'}`,
-              background: active ? 'var(--ant-color-fill-tertiary, rgba(255,255,255,0.06))' : undefined,
+              borderInlineStart: `3px solid ${active ? 'var(--accent)' : 'transparent'}`,
+              background: active ? 'var(--accent-soft)' : undefined,
             }}
           >
             {/* 这里刻意不用 Space：它会给每个子元素套一层 div，flex:1 落不到文本上，
@@ -734,7 +734,7 @@ function AliasInboxDrawer({ alias, onClose }: { alias: ICloudAlias | null; onClo
             style={{
               width: isNarrow ? '100%' : 320,
               flex: isNarrow ? 1 : '0 0 320px',
-              borderInlineEnd: isNarrow ? undefined : '1px solid var(--ant-color-split, rgba(255,255,255,0.12))',
+              borderInlineEnd: isNarrow ? undefined : '1px solid var(--border)',
               display: 'flex',
               flexDirection: 'column',
               minHeight: 0,
