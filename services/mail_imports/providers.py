@@ -14,7 +14,7 @@ from core.applemail_pool import (
     save_applemail_pool_json,
 )
 from core.config_store import config_store
-from core.db import OutlookAccountModel, engine
+from core.db import AccountModel, OutlookAccountModel, engine
 
 from .base import BaseMailImportStrategy
 from .microsoft_import_rules import (
@@ -24,6 +24,8 @@ from .microsoft_import_rules import (
     MicrosoftMailImportRecord,
     MailApiUrlFormatRule,
     MicrosoftMailImportRuleEngine,
+    RegisteredMicrosoftMailboxRule,
+    normalize_import_email,
 )
 from .schemas import (
     MailImportBatchDeleteRequest,
@@ -288,19 +290,22 @@ class MicrosoftMailImportStrategy(BaseMailImportStrategy):
         enabled: bool,
         alias_count: int,
         include_original: bool,
+        taken_emails: set[str] | None = None,
     ) -> list[MicrosoftMailImportRecord]:
         if not enabled:
             return records
 
         expanded: list[MicrosoftMailImportRecord] = []
         target_count = max(1, min(int(alias_count or 1), 5))
+        # 别名是随机拼的，撞上池内已有或注册过的地址就得换一个再拼
+        taken = {normalize_import_email(email) for email in taken_emails or set()}
 
         for record in records:
             emails: list[str] = []
-            seen_emails: set[str] = set()
+            seen_emails: set[str] = set(taken)
             if include_original:
                 emails.append(record.email)
-                seen_emails.add(record.email)
+                seen_emails.add(normalize_import_email(record.email))
 
             aliases: list[str] = []
             max_attempts = max(20, target_count * 20)
@@ -308,9 +313,9 @@ class MicrosoftMailImportStrategy(BaseMailImportStrategy):
             while len(aliases) < target_count and attempts < max_attempts:
                 candidate = MicrosoftMailImportStrategy._generate_alias_email(record.email)
                 attempts += 1
-                if candidate in seen_emails:
+                if normalize_import_email(candidate) in seen_emails:
                     continue
-                seen_emails.add(candidate)
+                seen_emails.add(normalize_import_email(candidate))
                 aliases.append(candidate)
 
             emails.extend(aliases)
@@ -432,14 +437,21 @@ class MicrosoftMailImportStrategy(BaseMailImportStrategy):
 
         with Session(engine) as session:
             existing_emails = {
-                str(email or "").strip()
+                normalize_import_email(email)
                 for email in session.exec(select(OutlookAccountModel.email)).all()
+                if str(email or "").strip()
+            }
+            registered_emails = {
+                normalize_import_email(email)
+                for email in session.exec(select(AccountModel.email)).all()
+                if str(email or "").strip()
             }
 
         row_parser = AutoDetectRowParser()
         rule_engine = MicrosoftMailImportRuleEngine(
             rules=[
                 DuplicateMicrosoftMailboxRule(),
+                RegisteredMicrosoftMailboxRule(),
                 MailApiUrlFormatRule(),
             ]
         )
@@ -452,15 +464,18 @@ class MicrosoftMailImportStrategy(BaseMailImportStrategy):
                 errors.append(str(exc))
                 continue
 
-            if record.email in batch_seen_emails:
+            if normalize_import_email(record.email) in batch_seen_emails:
                 failed += 1
                 errors.append(f"行 {line_number}: 导入内容存在重复邮箱: {record.email}")
                 continue
-            batch_seen_emails.add(record.email)
+            batch_seen_emails.add(normalize_import_email(record.email))
 
             duplicate_check = rule_engine.evaluate(
                 record,
-                {"existing_emails": existing_emails},
+                {
+                    "existing_emails": existing_emails,
+                    "registered_emails": registered_emails,
+                },
             )
             if not duplicate_check.get("ok"):
                 failed += 1
@@ -476,6 +491,7 @@ class MicrosoftMailImportStrategy(BaseMailImportStrategy):
             enabled=alias_enabled,
             alias_count=alias_count,
             include_original=alias_include_original,
+            taken_emails=existing_emails | registered_emails,
         )
 
         oauth_records = [
@@ -537,7 +553,7 @@ class MicrosoftMailImportStrategy(BaseMailImportStrategy):
                     session.add(account)
                     session.commit()
                     session.refresh(account)
-                    existing_emails.add(record.email)
+                    existing_emails.add(normalize_import_email(record.email))
                     accounts.append({
                         "id": account.id,
                         "email": account.email,

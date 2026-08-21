@@ -32,6 +32,11 @@ class MicrosoftImportRowParser(Protocol):
         ...
 
 
+def normalize_import_email(value: str) -> str:
+    """查重一律按小写比，邮箱大小写不同不该被当成两个地址。"""
+    return str(value or "").strip().lower()
+
+
 def _is_valid_email(email: str) -> bool:
     return "@" in str(email or "").strip()
 
@@ -146,9 +151,34 @@ class DuplicateMicrosoftMailboxRule:
         record: MicrosoftMailImportRecord,
         context: dict[str, Any],
     ) -> dict[str, Any]:
-        existing_emails = context.get("existing_emails") or set()
-        if record.email in existing_emails:
+        existing_emails = {
+            normalize_import_email(email) for email in context.get("existing_emails") or set()
+        }
+        if normalize_import_email(record.email) in existing_emails:
             return {"ok": False, "message": f"行 {record.line_number}: 邮箱已存在: {record.email}"}
+        return {"ok": True, "message": "ok"}
+
+
+class RegisteredMicrosoftMailboxRule:
+    """挡掉已经注册成功过的地址。
+
+    池子取号时会把行删掉，所以池内查重看不见"用过的"。重新导入一份含旧别名的
+    清单就会把注册过的地址又塞回池子，下次注册必然撞平台的"邮箱已被占用"。
+    """
+
+    def evaluate(
+        self,
+        record: MicrosoftMailImportRecord,
+        context: dict[str, Any],
+    ) -> dict[str, Any]:
+        registered_emails = {
+            normalize_import_email(email) for email in context.get("registered_emails") or set()
+        }
+        if normalize_import_email(record.email) in registered_emails:
+            return {
+                "ok": False,
+                "message": f"行 {record.line_number}: 邮箱已注册过账号，不再入池: {record.email}",
+            }
         return {"ok": True, "message": "ok"}
 
 

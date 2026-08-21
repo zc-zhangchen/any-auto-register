@@ -3621,20 +3621,34 @@ class OutlookMailbox(BaseMailbox):
         return bool(str(extra.get("mailapi_url") or "").strip())
 
     def _pop_account(self) -> dict:
+        from sqlalchemy import func
         from sqlmodel import Session, select
-        from core.db import engine, OutlookAccountModel
+        from core.db import engine, AccountModel, OutlookAccountModel
 
         with OutlookMailbox._pop_lock:
             with Session(engine) as session:
-                account = (
-                    session.exec(
-                        select(OutlookAccountModel)
-                        .where(OutlookAccountModel.enabled == True)
-                        .order_by(OutlookAccountModel.id)
-                    )
-                    .first()
+                # 池子是消费型的，取走即删；但导入时把用过的地址又写回来（比如
+                # 重新导入一份含旧别名的清单）就会拿到已经注册过的邮箱，再去注册
+                # 必然撞 "邮箱已被占用"。这里按 accounts 表兜一道，注册过的直接跳过。
+                registered = select(func.lower(AccountModel.email))
+                query = (
+                    select(OutlookAccountModel)
+                    .where(OutlookAccountModel.enabled == True)
+                    .where(func.lower(OutlookAccountModel.email).notin_(registered))
+                    .order_by(OutlookAccountModel.id)
                 )
+                account = session.exec(query).first()
                 if not account:
+                    total_left = session.exec(
+                        select(func.count(OutlookAccountModel.id)).where(
+                            OutlookAccountModel.enabled == True
+                        )
+                    ).one()
+                    if total_left:
+                        raise RuntimeError(
+                            f"微软邮箱账号池里剩下的 {total_left} 个地址都已经注册过了，"
+                            "请导入新的邮箱"
+                        )
                     raise RuntimeError("微软邮箱账号池为空，请先在设置页批量导入")
 
                 payload = {

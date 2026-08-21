@@ -95,6 +95,27 @@ class MailImportServiceTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertEqual(result["message"], "行 2: 邮箱已存在: demo@outlook.com")
 
+    def test_registered_email_rule_keeps_used_address_out_of_the_pool(self):
+        rules_module = load_microsoft_import_rules_module()
+        RegisteredMicrosoftMailboxRule = rules_module.RegisteredMicrosoftMailboxRule
+        MicrosoftMailImportRecord = rules_module.MicrosoftMailImportRecord
+
+        rule = RegisteredMicrosoftMailboxRule()
+        record = MicrosoftMailImportRecord(
+            line_number=3,
+            email="Phillip94426+wbuuax@outlook.com",
+            password="password",
+            client_id="client-id",
+            refresh_token="refresh-token",
+        )
+
+        result = rule.evaluate(
+            record,
+            {"registered_emails": {"phillip94426+wbuuax@outlook.com"}},
+        )
+        self.assertFalse(result["ok"])
+        self.assertIn("已注册过账号", result["message"])
+
     def test_microsoft_mailbox_availability_rule_rejects_service_abuse_mode(self):
         rules_module = load_microsoft_import_rules_module()
         MicrosoftMailImportRecord = rules_module.MicrosoftMailImportRecord
@@ -303,6 +324,119 @@ class MailImportServiceTests(unittest.TestCase):
                             ]
                         ),
                     )
+            finally:
+                test_engine.dispose()
+
+
+    def test_microsoft_strategy_skips_addresses_that_already_registered(self):
+        from core.db import AccountModel
+        from services.mail_imports.schemas import MailImportExecuteRequest
+        from services.mail_imports.providers import MicrosoftMailImportStrategy
+
+        strategy = MicrosoftMailImportStrategy()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            test_engine = create_engine(f"sqlite:///{Path(tmp_dir) / 'mail-imports.db'}")
+            SQLModel.metadata.create_all(test_engine)
+
+            from sqlmodel import Session
+
+            with Session(test_engine) as session:
+                session.add(
+                    AccountModel(
+                        platform="chatgpt",
+                        email="used+wbuuax@outlook.com",
+                        password="pwd",
+                    )
+                )
+                session.commit()
+
+            try:
+                with patch("services.mail_imports.providers.engine", test_engine), \
+                     patch("services.mail_imports.providers.OutlookMailbox") as mailbox_cls:
+                    mailbox = mailbox_cls.return_value
+                    mailbox.probe_oauth_availability.return_value = {
+                        "ok": True,
+                        "reason": "ok",
+                        "message": "微软邮箱可用性检测通过",
+                    }
+
+                    response = strategy.execute(
+                        MailImportExecuteRequest(
+                            type="microsoft",
+                            content=(
+                                "used+wbuuax@outlook.com----password----client-a----refresh-a\n"
+                                "fresh@outlook.com----password----client-b----refresh-b"
+                            ),
+                        )
+                    )
+
+                    self.assertEqual(response.summary.success, 1)
+                    self.assertEqual(response.summary.failed, 1)
+                    self.assertIn("已注册过账号", " ".join(response.errors))
+                    self.assertEqual(
+                        [item.email for item in response.snapshot.items],
+                        ["fresh@outlook.com"],
+                    )
+            finally:
+                test_engine.dispose()
+
+    def test_pool_pop_walks_past_addresses_that_already_registered(self):
+        from sqlmodel import Session, select
+        from core.base_mailbox import OutlookMailbox
+        from core.db import AccountModel, OutlookAccountModel
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            test_engine = create_engine(f"sqlite:///{Path(tmp_dir) / 'pool.db'}")
+            SQLModel.metadata.create_all(test_engine)
+
+            try:
+                with Session(test_engine) as session:
+                    session.add(
+                        AccountModel(
+                            platform="chatgpt",
+                            email="Used+wbuuax@outlook.com",
+                            password="pwd",
+                        )
+                    )
+                    session.add(
+                        OutlookAccountModel(email="used+wbuuax@outlook.com", password="pwd")
+                    )
+                    session.add(OutlookAccountModel(email="fresh@outlook.com", password="pwd"))
+                    session.commit()
+
+                with patch("core.db.engine", test_engine):
+                    payload = OutlookMailbox()._pop_account()
+
+                self.assertEqual(payload["email"], "fresh@outlook.com")
+
+                with Session(test_engine) as session:
+                    left = sorted(
+                        row.email for row in session.exec(select(OutlookAccountModel)).all()
+                    )
+                self.assertEqual(left, ["used+wbuuax@outlook.com"])
+            finally:
+                test_engine.dispose()
+
+    def test_pool_pop_says_so_when_everything_left_is_already_registered(self):
+        from sqlmodel import Session
+        from core.base_mailbox import OutlookMailbox
+        from core.db import AccountModel, OutlookAccountModel
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            test_engine = create_engine(f"sqlite:///{Path(tmp_dir) / 'pool-used.db'}")
+            SQLModel.metadata.create_all(test_engine)
+
+            try:
+                with Session(test_engine) as session:
+                    session.add(
+                        AccountModel(platform="chatgpt", email="used@outlook.com", password="pwd")
+                    )
+                    session.add(OutlookAccountModel(email="used@outlook.com", password="pwd"))
+                    session.commit()
+
+                with patch("core.db.engine", test_engine):
+                    with self.assertRaisesRegex(RuntimeError, "都已经注册过了"):
+                        OutlookMailbox()._pop_account()
             finally:
                 test_engine.dispose()
 
