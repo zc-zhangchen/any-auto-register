@@ -16,15 +16,11 @@ export function getICloudRegionLabel(region?: string): string {
 }
 
 /**
- * 隐私邮箱的固定收件链接：打开就是这个地址的最新一封邮件。
- * 拿去贴到别处也能用，不用先进 iCloud 页再翻列表。
+ * 隐私邮箱的免登录邮件链接：打开就是这个地址的最新一封邮件正文。
+ * 链接本身就是权限，复制给谁谁都能看，所以走的是后端那串随机 share_token。
  */
-export function aliasMailPath(aliasId: number): string {
-  return `/icloud/mail/${aliasId}`
-}
-
-export function aliasMailUrl(aliasId: number): string {
-  return `${window.location.origin}${aliasMailPath(aliasId)}`
+export function aliasMailUrl(shareToken: string): string {
+  return shareToken ? `${window.location.origin}/m/${shareToken}` : ''
 }
 
 export function formatDateTime(value?: string | null): string {

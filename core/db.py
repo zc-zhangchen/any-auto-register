@@ -1,6 +1,7 @@
 """数据库模型 - SQLite via SQLModel"""
 from datetime import datetime, timezone
 import os
+import secrets
 from typing import Optional
 from sqlmodel import Field, SQLModel, create_engine, Session, select
 import json
@@ -8,6 +9,11 @@ import json
 
 def _utcnow():
     return datetime.now(timezone.utc)
+
+
+def new_alias_share_token() -> str:
+    """128 位随机串，够长到不能枚举，又短到能塞进一行链接里。"""
+    return secrets.token_urlsafe(16)
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///account_manager.db")
 engine = create_engine(DATABASE_URL)
@@ -117,6 +123,8 @@ class ICloudAliasModel(SQLModel, table=True):
     note: str = ""
     status: str = "active"
     provider_id: str = ""
+    # 免登录查看最新邮件的凭证，链接本身就是权限，所以必须是猜不出来的随机串
+    share_token: str = Field(default_factory=lambda: new_alias_share_token(), index=True)
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
 
@@ -195,9 +203,37 @@ def _migrate_outlook_accounts_schema() -> None:
         )
 
 
+def _migrate_icloud_aliases_schema() -> None:
+    if engine.url.get_backend_name() == "sqlite":
+        with engine.begin() as conn:
+            rows = conn.exec_driver_sql("PRAGMA table_info('icloud_aliases')").fetchall()
+            if not rows:
+                return
+            if "share_token" not in {str(row[1]) for row in rows}:
+                conn.exec_driver_sql(
+                    "ALTER TABLE icloud_aliases ADD COLUMN share_token TEXT DEFAULT ''"
+                )
+
+    # 建表之前就存在的隐私邮箱没有 token，逐行补一个（不能用一条 UPDATE，
+    # 每行得是不同的随机值）
+    with Session(engine) as session:
+        pending = session.exec(
+            select(ICloudAliasModel).where(
+                (ICloudAliasModel.share_token == None)  # noqa: E711 - SQL 里要 IS NULL
+                | (ICloudAliasModel.share_token == "")
+            )
+        ).all()
+        for row in pending:
+            row.share_token = new_alias_share_token()
+            session.add(row)
+        if pending:
+            session.commit()
+
+
 def init_db():
     SQLModel.metadata.create_all(engine)
     _migrate_outlook_accounts_schema()
+    _migrate_icloud_aliases_schema()
 
 
 def get_session():

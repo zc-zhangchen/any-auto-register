@@ -37,10 +37,7 @@ function ProtectedLayout() {
       .then(s => {
         const token = getToken()
         if (s.has_password && !token) {
-          // 带上原地址，登录完直接回到刚才那封邮件，而不是甩回仪表盘
-          const next = `${window.location.pathname}${window.location.search}`
-          const suffix = next === '/' ? '' : `?next=${encodeURIComponent(next)}`
-          navigate(`/login${suffix}`, { replace: true })
+          navigate('/login', { replace: true })
         } else {
           setReady(true)
         }
@@ -95,7 +92,7 @@ function AppContent() {
     const path = location.pathname
     if (path === '/') return ['/']
     if (path.startsWith('/accounts')) return [path]
-    if (path.startsWith('/icloud')) return ['/icloud']
+    if (path === '/icloud') return ['/icloud']
     if (path === '/history') return ['/history']
     if (path === '/proxies') return ['/proxies']
     if (path === '/settings') return ['/settings']
@@ -243,7 +240,6 @@ function AppContent() {
             <Route path="/accounts/:platform" element={<Accounts />} />
             <Route path="/register" element={<RegisterTaskPage />} />
             <Route path="/icloud" element={<ICloudPage />} />
-            <Route path="/icloud/mail/:aliasId" element={<ICloudPage />} />
             <Route path="/running-tasks" element={<RunningTasks />} />
             <Route path="/history" element={<TaskHistory />} />
             <Route path="/proxies" element={<Proxies />} />

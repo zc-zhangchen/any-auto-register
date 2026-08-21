@@ -6,12 +6,6 @@ import { darkTheme } from '@/theme'
 
 type Step = 'password' | '2fa'
 
-/** 只认站内相对路径，`//host` 这种会被浏览器当成绝对地址，别拿它做跳转。 */
-function nextPath(): string {
-  const raw = new URLSearchParams(window.location.search).get('next') || ''
-  return raw.startsWith('/') && !raw.startsWith('//') ? raw : '/'
-}
-
 function LoginContent() {
   const { message } = App.useApp()
   const [step, setStep] = useState<Step>('password')
@@ -33,7 +27,7 @@ function LoginContent() {
         setStep('2fa')
       } else {
         setToken(data.access_token)
-        window.location.href = nextPath()
+        window.location.href = '/'
       }
     } catch (e: any) {
       message.error(e.message)
@@ -53,7 +47,7 @@ function LoginContent() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.detail || '验证失败')
       setToken(data.access_token)
-      window.location.href = nextPath()
+      window.location.href = '/'
     } catch (e: any) {
       message.error(e.message)
     } finally {

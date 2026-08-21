@@ -43,6 +43,8 @@ export interface ICloudAlias {
   note: string
   status: string
   provider_id: string
+  /** 免登录查看最新邮件的凭证，为空说明是后端补 token 之前的旧数据 */
+  share_token: string
   created_at: string | null
 }
 

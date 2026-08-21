@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
 import {
   Alert,
   App,
@@ -30,7 +29,6 @@ import {
   InboxOutlined,
   LinkOutlined,
   LoginOutlined,
-  MailOutlined,
   PaperClipOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -57,7 +55,6 @@ import {
   DEFAULT_ICLOUD_IMAP_PORT,
   ICLOUD_HOURLY_ALIAS_LIMIT,
   ICLOUD_REGION_OPTIONS,
-  aliasMailPath,
   aliasMailUrl,
   formatDateTime,
   formatRelativeTime,
@@ -68,8 +65,6 @@ const { Text, Paragraph, Title } = Typography
 
 export default function ICloudPage() {
   const { message } = App.useApp()
-  const navigate = useNavigate()
-  const { aliasId: aliasIdParam } = useParams()
   const [accounts, setAccounts] = useState<ICloudAccount[]>([])
   const [aliases, setAliases] = useState<ICloudAlias[]>([])
   const [loading, setLoading] = useState(false)
@@ -79,11 +74,6 @@ export default function ICloudPage() {
   const [generateOpen, setGenerateOpen] = useState(false)
   const [filterAccountId, setFilterAccountId] = useState<number | undefined>()
   const [inboxAlias, setInboxAlias] = useState<ICloudAlias | null>(null)
-  // 从邮件链接进来的要直接落在最新一封上，从“收件”按钮进来的保持原来的浏览习惯。
-  const [focusLatest, setFocusLatest] = useState(false)
-  const [activeTab, setActiveTab] = useState(aliasIdParam ? 'aliases' : 'accounts')
-  const [loaded, setLoaded] = useState(false)
-  const linkedAliasId = Number(aliasIdParam || 0)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -94,7 +84,6 @@ export default function ICloudPage() {
       ])
       setAccounts(nextAccounts)
       setAliases(nextAliases)
-      setLoaded(true)
     } catch (error) {
       message.error((error as Error).message)
     } finally {
@@ -105,29 +94,6 @@ export default function ICloudPage() {
   useEffect(() => {
     load()
   }, [load])
-
-  const openLatestMail = useCallback((alias: ICloudAlias) => {
-    setFocusLatest(true)
-    setInboxAlias(alias)
-  }, [])
-
-  const closeInbox = () => {
-    setInboxAlias(null)
-    setFocusLatest(false)
-    if (linkedAliasId) navigate('/icloud')
-  }
-
-  useEffect(() => {
-    if (!linkedAliasId || !loaded) return
-    setActiveTab('aliases')
-    const target = aliases.find((alias) => alias.id === linkedAliasId)
-    if (target) {
-      openLatestMail(target)
-      return
-    }
-    message.error(`隐私邮箱 #${linkedAliasId} 不存在或已删除`)
-    navigate('/icloud', { replace: true })
-  }, [aliases, linkedAliasId, loaded, message, navigate, openLatestMail])
 
   const withBusy = async (id: number, action: () => Promise<unknown>, successText: string) => {
     setBusyId(id)
@@ -259,32 +225,34 @@ export default function ICloudPage() {
     },
     {
       title: '邮件 URL',
-      width: 190,
-      render: (_: unknown, alias: ICloudAlias) => (
-        <Space size={4}>
-          <Tooltip title="打开这个隐私邮箱的最新一封邮件">
-            <Button
-              size="small"
-              type="link"
-              icon={<MailOutlined />}
-              style={{ paddingInline: 0 }}
-              onClick={() => openLatestMail(alias)}
-            >
-              最新邮件
-            </Button>
-          </Tooltip>
-          <Tooltip title={aliasMailPath(alias.id)}>
+      width: 280,
+      render: (_: unknown, alias: ICloudAlias) => {
+        const url = aliasMailUrl(alias.share_token)
+        if (!url) return <Text type="secondary">-</Text>
+        return (
+          <Space size={4} style={{ maxWidth: '100%' }}>
+            <Tooltip title="免登录打开，只显示最新一封邮件">
+              <Typography.Link
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                ellipsis
+                style={{ fontSize: 12, maxWidth: 210 }}
+              >
+                {url}
+              </Typography.Link>
+            </Tooltip>
             <Text
               type="secondary"
               copyable={{
-                text: aliasMailUrl(alias.id),
+                text: url,
                 icon: [<LinkOutlined key="copy" />, <LinkOutlined key="copied" />],
-                tooltips: ['复制邮件链接', '链接已复制'],
+                tooltips: ['复制链接', '链接已复制'],
               }}
             />
-          </Tooltip>
-        </Space>
-      ),
+          </Space>
+        )
+      },
     },
     { title: '标签', dataIndex: 'label', width: 160, render: (value: string) => value || '-' },
     { title: '所属主号', dataIndex: 'account_email', width: 220 },
@@ -343,8 +311,7 @@ export default function ICloudPage() {
       </div>
 
       <Tabs
-        activeKey={activeTab}
-        onChange={setActiveTab}
+        defaultActiveKey="accounts"
         items={[
           {
             key: 'accounts',
@@ -401,7 +368,7 @@ export default function ICloudPage() {
                   columns={aliasColumns}
                   dataSource={aliases}
                   // 列多了之后窄屏会把邮箱地址挤成三行，宁可横向滚动
-                  scroll={{ x: 1180 }}
+                  scroll={{ x: 1380 }}
                   pagination={{ pageSize: 20, showSizeChanger: false }}
                   locale={{
                     emptyText: (
@@ -441,7 +408,7 @@ export default function ICloudPage() {
         onGenerated={() => load()}
       />
 
-      <AliasInboxDrawer alias={inboxAlias} focusLatest={focusLatest} onClose={closeInbox} />
+      <AliasInboxDrawer alias={inboxAlias} onClose={() => setInboxAlias(null)} />
     </div>
   )
 }
@@ -666,16 +633,7 @@ function MessageDetail({ item }: { item: ICloudMessage }) {
   )
 }
 
-function AliasInboxDrawer({
-  alias,
-  onClose,
-  focusLatest = false,
-}: {
-  alias: ICloudAlias | null
-  onClose: () => void
-  /** 从邮件链接进来时直接展开最新一封，窄屏也不停在列表页。 */
-  focusLatest?: boolean
-}) {
+function AliasInboxDrawer({ alias, onClose }: { alias: ICloudAlias | null; onClose: () => void }) {
   const { message } = App.useApp()
   const screens = Grid.useBreakpoint()
   const [messages, setMessages] = useState<ICloudMessage[]>([])
@@ -689,16 +647,14 @@ function AliasInboxDrawer({
     if (!alias) return
     setLoading(true)
     try {
-      const items = await listICloudAliasMessages(alias.id)
-      setMessages(items)
-      if (focusLatest && items.length) setSelectedId(items[0].id)
+      setMessages(await listICloudAliasMessages(alias.id))
     } catch (error) {
       message.error((error as Error).message)
       setMessages([])
     } finally {
       setLoading(false)
     }
-  }, [alias, focusLatest, message])
+  }, [alias, message])
 
   useEffect(() => {
     setMessages([])

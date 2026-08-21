@@ -12,7 +12,12 @@ from typing import Any, Optional
 
 from sqlmodel import Session, select
 
-from core.db import ICloudAccountModel, ICloudAliasModel, engine
+from core.db import (
+    ICloudAccountModel,
+    ICloudAliasModel,
+    engine,
+    new_alias_share_token,
+)
 from core.secret_box import secret_box
 from platforms.icloud import (
     ALIAS_STATUS_ACTIVE,
@@ -182,6 +187,7 @@ def _alias_to_dict(row: ICloudAliasModel, account_email: str) -> dict[str, Any]:
         "note": row.note,
         "status": row.status,
         "provider_id": row.provider_id,
+        "share_token": row.share_token or "",
         "created_at": _as_utc(row.created_at).isoformat() if row.created_at else None,
     }
 
@@ -385,6 +391,7 @@ def _upsert_alias(
         row.note = str(payload.get("note") or "") or row.note
         row.status = str(payload.get("status") or ALIAS_STATUS_ACTIVE)
         row.provider_id = str(payload.get("provider_id") or "") or row.provider_id
+        row.share_token = row.share_token or new_alias_share_token()
         row.updated_at = _utcnow()
         session.add(row)
         session.commit()
@@ -428,3 +435,24 @@ def fetch_alias_messages(alias_id: int, *, limit: int = DEFAULT_MESSAGE_LIMIT) -
             raise ICloudError("alias_not_found", "隐私邮箱不存在")
         account_id, address = alias.account_id, alias.address
     return fetch_account_messages(account_id, limit=limit, recipient=address)
+
+
+def fetch_latest_shared_message(
+    share_token: str, *, limit: int = DEFAULT_MESSAGE_LIMIT
+) -> tuple[str, Optional[MailMessage]]:
+    """按分享 token 取该隐私邮箱的最新一封邮件。
+
+    给免登录页面用，所以只认 token、只回一封，拿不到地址以外的任何账号信息。
+    """
+    token = str(share_token or "").strip()
+    if not token:
+        raise ICloudError("alias_not_found", "隐私邮箱不存在")
+    with Session(engine) as session:
+        alias = session.exec(
+            select(ICloudAliasModel).where(ICloudAliasModel.share_token == token)
+        ).first()
+        if alias is None:
+            raise ICloudError("alias_not_found", "隐私邮箱不存在")
+        account_id, address = alias.account_id, alias.address
+    messages = fetch_account_messages(account_id, limit=limit, recipient=address)
+    return address, messages[0] if messages else None
