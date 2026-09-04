@@ -433,6 +433,44 @@ docker compose up -d --build
 
 当前 Dockerfile 已改为通过固定直链安装 Camoufox，以避免构建时访问 GitHub Releases API 触发匿名限流。
 
+### 下载预构建镜像并运行（可选）
+
+如果你不想在本地构建，也可以直接拉取 GitHub Actions 产出的镜像运行。
+
+镜像仓库（原项目）：
+
+```text
+ghcr.io/zc-zhangchen/any-auto-register:latest
+```
+
+拉取镜像：
+
+```bash
+docker pull ghcr.io/zc-zhangchen/any-auto-register:latest
+```
+
+运行容器（与 compose 挂载目录保持一致）：
+
+```bash
+docker run -d \
+  --name any-auto-register \
+  -p 8000:8000 \
+  -p 127.0.0.1:8889:8889 \
+  -v ./data:/runtime \
+  -v ./_ext_targets:/_ext_targets \
+  -v ./external_logs:/app/services/external_logs \
+  -e HOST=0.0.0.0 \
+  -e PORT=8000 \
+  -e APP_ENABLE_SOLVER=1 \
+  ghcr.io/zc-zhangchen/any-auto-register:latest
+```
+
+如果镜像访问受限，可先登录 GHCR：
+
+```bash
+docker login ghcr.io
+```
+
 ### 访问
 
 ```text
