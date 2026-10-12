@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from services.chatgpt_sync import (
@@ -10,6 +11,8 @@ from services.chatgpt_sync import (
     persist_sub2api_sync_result,
     upload_chatgpt_account_to_cpa,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _is_config_enabled(value: Any, default: bool = False) -> bool:
@@ -87,10 +90,12 @@ def sync_account(account) -> list[dict[str, Any]]:
                     # 如果 token_json 中没有 refresh_token，从 extra 获取
                     if not token_json.get("refresh_token"):
                         refresh_token = _pick_text(extra, "refresh_token", "refreshToken")
-                        print(f"[DEBUG] extra keys: {list(extra.keys())}")
-                        print(f"[DEBUG] refresh_token from extra: {refresh_token[:20] if refresh_token else 'EMPTY'}")
+                        logger.debug(f"Extra keys: {list(extra.keys())}")
                         if refresh_token:
+                            logger.debug("Refresh token found in extra data")
                             token_json["refresh_token"] = refresh_token
+                        else:
+                            logger.debug("No refresh token found in extra data")
                     if not token_json.get("access_token"):
                         access_token = _pick_text(extra, "access_token", "accessToken") or getattr(account, "token", "")
                         if access_token:
@@ -108,8 +113,11 @@ def sync_account(account) -> list[dict[str, Any]]:
                     access_token = str(token_json.get("access_token") or "").strip()
 
                     # 验证必须有 refresh_token
-                    print(f"[DEBUG] Final token_json keys: {list(token_json.keys())}")
-                    print(f"[DEBUG] Final refresh_token: {refresh_token[:20] if refresh_token else 'EMPTY'}")
+                    logger.debug(f"Final token_json keys: {list(token_json.keys())}")
+                    if refresh_token:
+                        logger.debug(f"Refresh token present (length: {len(refresh_token)})")
+                    else:
+                        logger.debug("No refresh token in final token_json")
                     if not refresh_token:
                         msg = "账号缺少 refresh_token"
                         persist_cpa_sync_result(account, False, msg)
