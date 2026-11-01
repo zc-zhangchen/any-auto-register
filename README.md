@@ -646,6 +646,7 @@ Electron 开发模式不会自动启动 Python 后端。
 ## 用户讨论群
 
 - QQ群：**1065114376**（any-auto-register 注册机用户讨论群）
+- QQ群：**971026075**（any-auto-register 注册机用户讨论群2）
 
 ## 赞助支持
 
