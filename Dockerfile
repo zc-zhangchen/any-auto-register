@@ -15,6 +15,7 @@ FROM python:3.12-slim AS runtime
 
 ARG CAMOUFOX_VERSION=135.0.1
 ARG CAMOUFOX_RELEASE=beta.24
+ARG TARGETARCH
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -41,7 +42,12 @@ COPY scripts/install_camoufox.py /tmp/install_camoufox.py
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl ca-certificates nodejs \
         libgtk-3-0 libx11-xcb1 libasound2 xvfb xauth \
-    && curl -fsSL https://go.dev/dl/go1.24.2.linux-amd64.tar.gz | tar -C /usr/local -xz \
+    && GOARCH=${TARGETARCH:-amd64} \
+    && if [ "$GOARCH" = "amd64" ]; then GOARCH="amd64"; \
+       elif [ "$GOARCH" = "arm64" ]; then GOARCH="arm64"; \
+       elif [ "$GOARCH" = "arm" ]; then GOARCH="armv6l"; \
+       else GOARCH="amd64"; fi \
+    && curl -fsSL https://go.dev/dl/go1.24.2.linux-${GOARCH}.tar.gz | tar -C /usr/local -xz \
     && curl -LsSf https://astral.sh/uv/install.sh | sh \
     && rm -rf /var/lib/apt/lists/*
 
